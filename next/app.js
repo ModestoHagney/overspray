@@ -391,7 +391,7 @@ async function applySnap(snap) {
   const doc = await deserializeDoc(unpack(snap));
   if (seq !== snapSeq) return;
   app.doc = doc;
-  if (app.sel !== 'base' && !app.doc.layers.some(l => l.id === app.sel)) app.sel = 'base';
+  if (!fixedSel() && !app.doc.layers.some(l => l.id === app.sel)) app.sel = 'base';
   syncUndo();
   change();
   skipCapture = true; // after change(), which clears it for real edits
@@ -654,6 +654,11 @@ function pickFinish(t, how) {
   app.ftarget = all[0] || null; app.fmore = all.slice(1);
 }
 
+// the pit box swatch a selection names ('pit0', 'pit1', …), or null
+const pitAt = (id) => /^pit\d+$/.test(id || '') ? (app.doc.pitbox || [])[+id.slice(3)] || null : null;
+// the base coat or a pit box swatch: a colour of the livery's, not a layer
+const fixedSel = () => app.sel === 'base' || !!pitAt(app.sel);
+
 function selectedLayers() {
   const ids = app.sels.length > 1 && app.sels.includes(app.sel) ? app.sels : app.sel && app.sel !== 'base' ? [app.sel] : [];
   return app.doc.layers.filter(l => ids.includes(l.id));
@@ -876,6 +881,9 @@ const actions = {
       const t = await loadTemplate(file, d.regionMap);
       d.template = t.template;
       d.regionMap = t.regionMap;
+      // the template's pit box swatches; ones already set keep their colours
+      d.pitbox = t.pitbox.map((p, i) => d.pitbox && d.pitbox[i] ? { ...p, color: d.pitbox[i].color, ref: d.pitbox[i].ref } : { ...p, ref: null });
+      if (!fixedSel() && !d.layers.some(l => l.id === app.sel)) app.sel = 'base';
       if (!d.name || d.name === 'untitled livery') d.name = t.carName;
       fit();
       change();
@@ -2121,9 +2129,11 @@ const actions = {
   // what the colour controls are showing: the selection's colour, else the
   // colour the next shape will get
   selCorner,
+  pitAt,
   currentColour() {
     const l = actions.selected();
     if (app.sel === 'base') return app.doc.baseColor;
+    if (pitAt(app.sel)) return pitAt(app.sel).color;
     if (l && l.type === 'text') return l.textColor || app.colour;
     return l && (l.type === 'fill' || l.type === 'image') && l.color ? l.color : app.colour;
   },
@@ -2134,6 +2144,7 @@ const actions = {
     app.colour = hex;
     let painted = 0;
     if (app.sel === 'base') { app.doc.baseColor = hex; app.doc.baseRef = ref; painted = 1; }
+    else if (pitAt(app.sel)) { Object.assign(pitAt(app.sel), { color: hex, ref }); painted = 1; }
     else for (const l of selectedLayers()) { // every selected shape and text takes it
       if (l.type === 'fill') { l.color = hex; l.colorRef = ref; keepFadeOut(l); painted++; }
       else if (l.type === 'text') { l.textColor = hex; l.colorRef = ref; regenerateText(l); painted++; }
@@ -2192,7 +2203,7 @@ const actions = {
     const entry = { id: 'c' + newId(), name, color };
     d.palette.push(entry);
     actions.applyColour(color, { ref: entry.id }); // what is selected now follows it
-    if (!actions.selected() && app.sel !== 'base') change();
+    if (!actions.selected() && !fixedSel()) change();
   },
   // Palettes: sets of colours kept in this browser, for any livery to use,
   // and as files to share or keep somewhere safe
@@ -2302,14 +2313,14 @@ const actions = {
   nameColour(name) {
     const d = app.doc, sel = actions.selected(), color = String(actions.currentColour()).toLowerCase();
     name = String(name).trim().slice(0, 40);
-    const ref = app.sel === 'base' ? d.baseRef : sel ? sel.colorRef : null;
+    const ref = app.sel === 'base' ? d.baseRef : pitAt(app.sel) ? pitAt(app.sel).ref : sel ? sel.colorRef : null;
     let c = d.palette.find(x => x.id === ref) || d.palette.find(x => x.color === color);
     if (!name) { ui.refresh(); return; }
     if (c && c.id === ref) { c.name = name; change({ now: true }); return; }
     if (c) c.name = name;
     else d.palette.push(c = { id: 'c' + newId(), name, color });
     actions.applyColour(c.color, { ref: c.id }); // what is selected now follows it
-    if (!sel && app.sel !== 'base') change();
+    if (!sel && !fixedSel()) change();
   },
   async editColour(id) {
     const d = app.doc, c = d.palette.find(x => x.id === id);
@@ -2320,6 +2331,7 @@ const actions = {
       d.palette = d.palette.filter(x => x.id !== id);
       for (const l of d.layers) if (l.colorRef === id) l.colorRef = null; // they keep the colour, just stop following
       if (d.baseRef === id) d.baseRef = null;
+      for (const p of d.pitbox) if (p.ref === id) p.ref = null;
     } else {
       c.name = res.name || c.name;
       c.color = res.color;
@@ -2328,6 +2340,7 @@ const actions = {
         if (l.type === 'text') { l.textColor = c.color; regenerateText(l); } else { l.color = c.color; keepFadeOut(l); }
       }
       if (d.baseRef === id) d.baseColor = c.color;
+      for (const p of d.pitbox) if (p.ref === id) p.color = c.color;
     }
     change({ now: true });
   },
@@ -2363,7 +2376,7 @@ const actions = {
   select(id, add = false, alone = false) {
     anchor = id;
     const real = id !== 'base' && app.doc.layers.some(l => l.id === id);
-    if (id !== 'base' && !real) { app.sel = null; app.sels = []; }
+    if (id !== 'base' && !pitAt(id) && !real) { app.sel = null; app.sels = []; }
     else if (add && real && app.sel && app.sel !== 'base') {
       const cur = new Set(selectedLayers().map(l => l.id)), had = cur.has(id);
       for (const m of (alone ? [id] : groupOf(id))) had ? cur.delete(m) : cur.add(m);

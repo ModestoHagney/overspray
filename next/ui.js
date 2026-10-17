@@ -149,7 +149,7 @@ export function initUI(app, actions, version) {
 
   // ---------- menus ----------
   // [label, shortcut, action, { off, tick }]
-  const hasLayer = () => app.sel !== null && app.sel !== 'base';
+  const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.pitAt(app.sel);
   // what can be done to the selected shapes as shapes, and whether each applies now
   const shapeCan = () => {
     const ls = actions.selectedLayers(), fills = ls.filter((l) => l.type === 'fill' && !l.specOnly), one = ls.length === 1 ? ls[0] : null;
@@ -282,6 +282,8 @@ export function initUI(app, actions, version) {
       if (g && !headed.has(g.id)) { headed.add(g.id); rows.push(head(g, shown.filter((x) => x.groupId === g.id))); }
       if (!g || !g.collapsed) rows.push(one(l));
     }
+    // the template's pit box colours: always on top in the paint, never moved
+    (d.pitbox || []).forEach((p, i) => rows.push(`<div class="row${app.sel === 'pit' + i ? ' sel' : ''}" data-pit="pit${i}" title="iRacing colours the pit box from this swatch on the sheet"><span class="sw" style="background:${esc(p.color)}"></span><span class="name">Pit box ${i + 1}</span></div>`));
     rows.push(`<div class="row${app.sel === 'base' ? ' sel' : ''}" data-layer="base"><span class="sw" style="background:${esc(d.baseColor)}"></span><span class="name">Base coat</span></div>`);
     return rows.join('');
   }
@@ -362,7 +364,7 @@ export function initUI(app, actions, version) {
   // is changed. `name`: the markup that goes beside the colour.
   function colourHead(name) {
     const d = app.doc, sel = actions.selected(), open = openFolds.has('f-saved');
-    const linked = app.sel === 'base' ? d.baseRef : sel ? sel.colorRef : null;
+    const pit = actions.pitAt(app.sel), linked = app.sel === 'base' ? d.baseRef : pit ? pit.ref : sel ? sel.colorRef : null;
     const saved = d.palette.map((c) => `<span class="chipwrap"><button class="chip${c.id === linked ? ' on' : ''}" data-pal="${esc(c.id)}" title="${esc(c.name)} · ${esc(c.color.toUpperCase())}. Set to it, and it follows when this colour is changed. Right-click to rename or change."><i style="background:${esc(c.color)}"></i><span>${esc(c.name)}</span></button><button class="chipedit" data-edit="${esc(c.id)}" title="Rename or change" aria-label="Edit ${esc(c.name)}">${svg('edit')}</button></span>`).join('');
     // the colour's name under the selection's: its saved colour's, or the next "Colour n"
     const cur = actions.currentColour(), named = d.palette.find((c) => c.id === linked) || d.palette.find((c) => c.color === cur);
@@ -386,6 +388,7 @@ export function initUI(app, actions, version) {
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
+    if (actions.pitAt(app.sel)) return colourHead(`<span class="pname">Pit box ${+app.sel.slice(3) + 1}</span>`);
     const many = actions.selectedLayers();
     if (many.length > 1) { // several: what can be done to them together
       const grouped = many.some((x) => x.groupId);
@@ -696,8 +699,8 @@ export function initUI(app, actions, version) {
     const t = e.target;
     if (!t.dataset || !t.dataset.colour) return;
     const v = t.value;
-    const sw = panels.layers.querySelector(`[data-layer="${CSS.escape(String(app.sel))}"] .sw`);
-    if (sw && (app.sel === 'base' || (actions.selected() || {}).type === 'fill')) sw.style.background = v;
+    const sw = panels.layers.querySelector(`[data-layer="${CSS.escape(String(app.sel))}"] .sw, [data-pit="${CSS.escape(String(app.sel))}"] .sw`);
+    if (sw && (app.sel === 'base' || actions.pitAt(app.sel) || (actions.selected() || {}).type === 'fill')) sw.style.background = v;
     actions.setColour(v);
     // a picture's first colour: "Original colours" comes on (the colour boxes are left alone, one is in use)
     if (app.mode === 'paint' && (actions.selected() || {}).type === 'image' && panels.props.querySelector('[data-act="ownColours"]:disabled')) panels.props.querySelector('.body').innerHTML = propsHtml();
@@ -1231,6 +1234,7 @@ export function initUI(app, actions, version) {
       if (l) { l.visible = !l.visible; actions.change(); }
       return;
     }
+    if (t.dataset.pit) return actions.select(t.dataset.pit);
     if (t.dataset.layer) { // Shift: the whole run from the row clicked last to this one; Ctrl: add or take out this one
       if (e.shiftKey && t.dataset.layer !== 'base' && panels.layers.contains(t)) return actions.selectRange(t.dataset.layer);
       // a layer's own row is that layer alone, even in a group; the group's row is the group
