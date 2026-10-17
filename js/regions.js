@@ -789,21 +789,8 @@ function sideAlong(map, link, side, r) {
   return Math.sign(vote) || (pts.length ? sideOf(r, pts[0], end.x - pts[0].x, end.y - pts[0].y) : 1);
 }
 
-// How the sheet beside one side of a link carries onto the other side, taken
-// as a whole: that side's two ends land on the other side's two ends (turned,
-// scaled and moved to fit), reflected as well when that is what puts this
-// side's panel beyond the edge from the other panel, as the two lie on the
-// car. Paint that hangs over this side's edge so lands on the other panel,
-// just inside its edge. Null if a region is gone or a side has no length.
-export function seamMatrix(map, link, side) {
-  const o = side === 'a' ? 'b' : 'a';
-  const ra = regionById(map, link[side].region), rb = regionById(map, link[o].region);
-  if (!ra || !rb) return null;
-  const p0 = link[side].from, p1 = link[side].to, q0 = link[o].from, q1 = link[o].to;
-  return fit(p0, p1, q0, q1, sideAlong(map, link, side, ra) === sideAlong(map, link, o, rb));
-}
-
-// The same, following the edge as it bends: the link cut into short stretches
+// How the sheet beside one side of a link carries onto the other side,
+// following the edge as it bends: the link cut into short stretches
 // (about every 48 px), each carried by its own matrix onto the matching
 // stretch of the other side, and kept to a strip running `depth` px into the
 // other panel from that stretch: → [{ m, strip }]. Strips meet along lines

@@ -70,28 +70,29 @@ export function ruleFor(doc, colour) {
   return (c && (doc.finishRules || []).find(r => r.color === c)) || null;
 }
 
+// a colour's rule as a finish, plain gloss without one
+const specOf = (r) => r ? { material: r.material, params: r.params || null } : { material: 'gloss', params: null };
+
 // the finish a layer ends up with: { material, params }
 export function finishSpec(doc, layer) {
   if (isArea(layer) || hasOwnFinish(layer)) return { material: layer.material || 'gloss', params: layer.matParams || null };
   const r = ruleFor(doc, layerColour(layer));
-  return r ? { material: r.material, params: r.params || null } : { material: 'gloss', params: null };
+  return specOf(r);
 }
-export const finishOf = (doc, layer) => finishSpec(doc, layer).material;
 // a Repeat's copies in its extra colours take those colours' finishes:
 // → [the layer's own, then one per extra colour], or null when all match
 function copyFinishes(doc, l, own) {
   const cs = (l.repeat && l.repeat.colors) || [];
   if (!cs.length) return null;
-  const fs = [own, ...cs.map((c) => { const r = ruleFor(doc, c); return r ? { material: r.material, params: r.params || null } : { material: 'gloss', params: null }; })];
+  const fs = [own, ...cs.map((c) => { const r = ruleFor(doc, c); return specOf(r); })];
   const key = (f) => f.material + JSON.stringify(f.params);
   return fs.some(f => key(f) !== key(own)) ? fs : null;
 }
 export function baseSpec(doc) {
   if (doc.baseMaterial && doc.baseMaterial !== 'gloss') return { material: doc.baseMaterial, params: doc.baseMatParams || null };
   const r = ruleFor(doc, doc.baseColor);
-  return r ? { material: r.material, params: r.params || null } : { material: 'gloss', params: null };
+  return specOf(r);
 }
-export const baseFinish = (doc) => baseSpec(doc).material;
 
 // The doc as it is painted and finished: each layer carrying the finish it
 // ends up with. The doc itself is returned when there is nothing to change.

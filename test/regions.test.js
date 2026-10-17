@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamMatrix, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline } from '../js/regions.js';
+import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline } from '../js/regions.js';
 
 // Convenience builder: a valid raw map with two mirrored door rectangles.
 function rawMap(overrides = {}) {
@@ -392,23 +392,6 @@ test('matchPoint carries a spot across a link to a turned, far-away region', () 
   assert.deepEqual(back.partner, { x: 100, y: 25 });
 });
 
-test('seamMatrix carries paint over one side\'s edge to just inside the other panel', () => {
-  const map = linkedMap();
-  const at = (m, x, y) => ({ x: Math.round(m.a * x + m.c * y + m.e), y: Math.round(m.b * x + m.d * y + m.f) });
-  const m = seamMatrix(map, map.links[0], 'a');
-  assert.deepEqual([at(m, 100, 0), at(m, 100, 100)], [{ x: 600, y: 300 }, { x: 500, y: 300 }]); // ends on ends
-  assert.deepEqual(at(m, 110, 25), { x: 575, y: 310 }); // over A's edge: inside B, a quarter along
-  assert.ok(at(m, 50, 50).y < 300); // A itself stays beyond B's edge
-  const back = seamMatrix(map, map.links[0], 'b');
-  assert.deepEqual(at(back, 575, 290), { x: 90, y: 25 }); // and over B's edge lands just inside A
-  // the same edges with B's stretch run the other way: only a reflection fits
-  map.links[0].b = { region: 'b', from: { x: 500, y: 300 }, to: { x: 600, y: 300 } };
-  const r = seamMatrix(map, map.links[0], 'a');
-  assert.ok(Math.abs(r.a * r.d - r.b * r.c + 1) < 1e-9); // determinant -1
-  assert.deepEqual(at(r, 110, 25), { x: 525, y: 310 });
-  assert.ok(at(r, 50, 50).y < 300);
-});
-
 test('seamPieces follows a bent edge: every cut along one side lands on the matching cut of the other', () => {
   // A's right edge is straight; B's top edge has a kink, so a single straight line would drift in the middle
   const map = parseRegionMap(rawMap({
@@ -428,7 +411,6 @@ test('seamPieces follows a bent edge: every cut along one side lands on the matc
   // the middle of A's edge lands on the kink, where the whole-edge line misses it by 40px
   const mid = pieces[n / 2].m;
   assert.ok(near(at(mid, { x: 100, y: 100 }), { x: 600, y: 260 }));
-  assert.ok(Math.abs(at(seamMatrix(map, link, 'a'), { x: 100, y: 100 }).y - 300) < 1e-6);
   // over A's edge lands inside B, beyond its kink
   const over = at(mid, { x: 110, y: 100 });
   assert.ok(pointInPolygon(regionById(map, 'b').points, over.x, over.y));

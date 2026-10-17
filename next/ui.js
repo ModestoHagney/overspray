@@ -41,6 +41,8 @@ const I = { // 20x20 line icons
   mlink: '<path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.9.9"/><path d="M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.9-.9"/>',
   // a loose piece and the spot it sits at
   mplace: '<rect x="2.5" y="11" width="6" height="6" rx="1"/><path d="M11 3h6v6h-6z" stroke-dasharray="2 2"/><path d="m7 9 4.5-4.5M8.5 4.5h3v3"/>',
+  // a bar of colour blocks: one fade over the whole car
+  cargrad: '<rect x="2.5" y="6" width="15" height="8" rx="1.5"/><path d="M6.5 6v8M9.5 6v8M11.5 6v8M12.8 6v8"/>',
   eye: '<path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z"/><circle cx="10" cy="10" r="2.2"/>',
   float: '<rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M8 16h8V8"/>',
   dock: '<rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M12 4v12"/>',
@@ -93,6 +95,7 @@ const TOOLS = [
   ['text', 'Text (T)'],
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
+  ['cargrad', 'New car gradient'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
 const FINISH_TOOLS = [
@@ -176,7 +179,6 @@ export function initUI(app, actions, version) {
       ['Undo', 'Ctrl+Z', 'undo', { off: !app.canUndo }], ['Redo', 'Ctrl+Y', 'redo', { off: !app.canRedo }], 0,
       ...layerItems(), 0,
       ['Select all', 'Ctrl+A', 'selectAll'], 0,
-      ['New car gradient', '', 'addCarGradient'], 0,
       ['Group', 'Ctrl+G', 'group', { off: actions.selectedLayers().length < 2 }],
       ['Ungroup', 'Ctrl+Shift+G', 'ungroup', { off: !actions.selectedLayers().some((l) => l.groupId) }],
     ],
@@ -207,7 +209,7 @@ export function initUI(app, actions, version) {
     $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Finish']].map(([id, name]) =>
       `<button data-mode="${id}" aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
-    const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
+    const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
     $('tools').innerHTML = strip.map(([id, name]) =>
       `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
@@ -476,7 +478,7 @@ export function initUI(app, actions, version) {
     const t = app.ftarget;
     const rows = finishList(app.doc).map((f) => {
       const key = f.kind === 'colour' ? f.colour : f.id;
-      const on = t && t.kind === f.kind && (f.kind === 'colour' ? t.colour === f.colour : t.id === f.id);
+      const on = t && [t, ...app.fmore].some((x) => x.kind === f.kind && (f.kind === 'colour' ? x.colour === f.colour : x.id === f.id));
       const layer = f.kind === 'colour' ? null : app.doc.layers.find((l) => l.id === f.id);
       const sw = f.kind === 'colour' ? `background:${esc(f.colour)}` : f.kind === 'area' ? 'background:var(--accent-soft);border-style:dashed' : swatch(layer);
       const what = f.kind === 'colour' ? finishLabel(f.material, f.params) : `${esc(f.name)} · ${finishLabel(f.material, f.params)}`;
@@ -511,9 +513,10 @@ export function initUI(app, actions, version) {
     const layer = t.kind === 'colour' ? null : d.layers.find((l) => l.id === t.id);
     const now = actions.finishNow() || { material: 'gloss', params: null };
     const f = readFinish(now.material, now.params), preset = presetOf(f);
-    const label = t.kind === 'colour' ? `<span class="dot" style="background:${esc(t.colour)}"></span>Everything this colour` : t.kind === 'area' ? esc(layer ? layer.name : 'Area') : `Just ${esc(layer ? layer.name : 'this layer')}`;
+    const many = app.fmore.length + 1;
+    const label = many > 1 ? `${many} picked` : t.kind === 'colour' ? `<span class="dot" style="background:${esc(t.colour)}"></span>Everything this colour` : t.kind === 'area' ? esc(layer ? layer.name : 'Area') : `Just ${esc(layer ? layer.name : 'this layer')}`;
     // a shape or text can be finished with its whole colour, or by itself
-    const canScope = (t.kind === 'colour' && t.layerId) || (t.kind === 'layer' && layer && !layer.car && layerColour(layer));
+    const canScope = many === 1 && ((t.kind === 'colour' && t.layerId) || (t.kind === 'layer' && layer && !layer.car && layerColour(layer)));
     const scope = !canScope ? '' : `<div class="seg"><button data-scope="colour" aria-pressed="${t.kind === 'colour'}">All this colour</button><button data-scope="layer" aria-pressed="${t.kind === 'layer'}">Just this layer</button></div>`;
     // the finish of anything else in the livery, taken over whole: no numbers to match by eye
     const others = finishList(d).filter((o) => !(o.kind === t.kind && (o.kind === 'colour' ? o.colour === t.colour : o.id === t.id)));
@@ -527,7 +530,7 @@ export function initUI(app, actions, version) {
       `<div class="acts"><button class="btn" data-act="resetFinish" title="Put the three sliders back"${preset ? ' disabled' : ''}>Reset</button></div>` +
       `<label class="switch" title="Specks or chips that catch the light, over this finish">Sparkle<input id="fn-sparkle" type="checkbox"${f.sparkle ? ' checked' : ''}></label>` +
       (!f.sparkle ? '' : slider('fn-amount', 1, 60, f.sparkle.amount, 'Amount') + slider('fn-size', 1, 12, f.sparkle.size, 'Size') + slider('fn-strength', 0, 100, f.sparkle.strength, 'Strength') + slider('fn-bright', 0, 100, f.sparkle.bright, 'Brightness', 'Each fleck also lightens the paint under it, so it shows bright even when it has nothing to mirror')) +
-      (t.kind === 'area' && layer ? `<label class="switch" title="The same area on the twin panel too, or across the centreline">Mirrored<input id="f-mirrored" type="checkbox"${layer.mirrored ? ' checked' : ''}></label>` : '');
+      (t.kind === 'area' && layer && many === 1 ? `<label class="switch" title="The same area on the twin panel too, or across the centreline">Mirrored<input id="f-mirrored" type="checkbox"${layer.mirrored ? ' checked' : ''}></label>` : '');
   }
 
   // ---------- Map mode's two panels ----------
@@ -1159,7 +1162,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.act !== undefined) { closeMenus(); return run(t.dataset.act); }
     if (t.dataset.mode) return actions.setMode(t.dataset.mode);
     if (t.dataset.findef) { const [kind, key] = t.dataset.findef.split(/:(.*)/); return actions.finishDefault(kind, key); }
-    if (t.dataset.fin) { const [kind, key] = t.dataset.fin.split(/:(.*)/); return actions.finishSelect(kind, key); }
+    if (t.dataset.fin) { const [kind, key] = t.dataset.fin.split(/:(.*)/); return actions.finishSelect(kind, key, e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) && 'add'); }
     if (t.dataset.finish) return actions.setFinish(t.dataset.finish);
     if (t.dataset.scope) return actions.finishScope(t.dataset.scope);
     if (t.dataset.fade) return actions.setFade('style', t.dataset.fade);
@@ -1168,6 +1171,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.fstopdrop !== undefined) return actions.dropFadeColour(+t.dataset.fstopdrop);
     if (t.dataset.piece) return actions.pickPiece(t.dataset.piece);
     if (t.dataset.tool === 'image') return actions.openLibrary(); // nothing to arm: it opens the library
+    if (t.dataset.tool === 'cargrad') return actions.addCarGradient(); // nor here: it adds one and opens its window
     if (t.dataset.tool) return actions.setTool(t.dataset.tool);
     if (t.dataset.edit) return actions.editColour(t.dataset.edit);
     if (t.dataset.savedfold !== undefined) { // the arrow by the colours: the saved ones, shown or put away
