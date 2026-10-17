@@ -468,6 +468,8 @@ option.sect, option.act { text-align: left; text-align-last: left; }
 /* Map › Pair panels: the list of twins to check */
 .row .tags.weak { color: #d98a00; font-weight: 600; }
 .pairbox { display: grid; gap: 6px; padding: 6px 6px 8px 12px; border-bottom: 1px solid var(--line); }
-.pairbox .pname { width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bar); color: var(--fg); }
+.pairbox .pname { display: flex; align-items: center; gap: 6px; }
+.pairbox .pname .sw { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+.pairbox .pname input { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bar); color: var(--fg); }
 .pairbox .acts { padding: 0; }
 .pairbox .note { padding: 0; }

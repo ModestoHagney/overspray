@@ -69,8 +69,10 @@ export function pairList(m) {
   return pairCache.list;
 }
 // While the pairing list is open the sheet is grey, and the panels being
-// checked are pink, on the car too
-export const GREY = '#d4d4d8', PINK = '#ff2bd6';
+// checked are pink (the first) and blue (the second), on the car too, so
+// even a piece too small for its name shows which is which
+export const GREY = '#d4d4d8', PAIR_COLOURS = ['#ff2bd6', '#00a3ff'];
+const pairColour = (id, ...lists) => { for (const l of lists) if (l && l.includes(id)) return PAIR_COLOURS[l.indexOf(id)]; return GREY; };
 let pink = null; // ids of the panels the guide on the car shows pink, or null for the usual guide
 export const setGuidePink = (ids) => { pink = ids; };
 
@@ -85,7 +87,7 @@ export function guideCanvas(map) {
   const trace = (pts) => { ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); };
   list.forEach((r, i) => {
     trace(regionOutline(r));
-    ctx.fillStyle = pink ? (pink.includes(r.id) ? PINK : GREY) : hue(i); ctx.fill();
+    ctx.fillStyle = pink ? pairColour(r.id, pink) : hue(i); ctx.fill();
     ctx.strokeStyle = '#101114'; ctx.lineWidth = 3; ctx.stroke();
   });
   if (pink) return c; // just the panels being checked, nothing else to look past
@@ -473,10 +475,10 @@ export function initMap(app, env) {
     const trace = (pts) => { ctx.beginPath(); pts.forEach((q, i) => { const a = S(q); i ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); }); ctx.closePath(); };
     const list = pieces(m), z = app.view.zoom;
     ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const pairing = app.tool === 'mpair', lit = pairing ? [...(app.pairHover || []), ...(app.pairOpen ? app.pairOpen.ids : [])] : [];
+    const pairing = app.tool === 'mpair';
     list.forEach((r, i) => {
       trace(regionOutline(r));
-      if (pairing) { ctx.fillStyle = lit.includes(r.id) ? PINK : GREY; ctx.fill(); }
+      if (pairing) { ctx.fillStyle = pairColour(r.id, app.pairOpen && app.pairOpen.ids, app.pairHover); ctx.fill(); }
       else if (app.mapShow.colours) { ctx.fillStyle = hue(i, 0.82); ctx.fill(); }
       ctx.strokeStyle = '#101114'; ctx.lineWidth = 1.25; ctx.stroke();
     });
