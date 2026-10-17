@@ -25,7 +25,7 @@ import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly,
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE } from '../js/finish.js';
-import { initMap, syncGuide, guideLayer } from './map.js';
+import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
 import { regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
@@ -62,6 +62,8 @@ export const app = {
   piece: null,                        // Map mode: the selected panel's id
   centreFor: null,                    // Map mode: the panel a centreline is being set on, if fixed
   mapShow: { colours: true },         // Map mode: panel colours and names over the sheet
+  pairOpen: null,                     // Pair panels: the list's open row, { key, ids (one panel, or the two being checked) }
+  pairHover: null,                    // Pair panels: ids of the row under the pointer
   font: 'Arial Black',                // what the next new text is set in
   // Finish mode: what the next finish applies to —
   // { kind: 'colour', colour, layerId? } | { kind: 'layer', id } | { kind: 'area', id }
@@ -690,7 +692,13 @@ function keepFadeOut(l) {
 const canChange = () => app.mode !== 'finish' || isArea(actions.selected());
 let spaceHeld = false; // Space is down: a drag moves the sheet
 let handFrom = 'select'; // the tool that was armed when the Hand was taken up
+let pairingOn = false, unpaired = new Set(), pairGuide = null; // unpaired: exact pairs taken apart by hand, not paired again this visit; // pairGuide: was Show on car on before the list put its pink panels on the car
 const toolChanged = () => {
+  // the pairing list is open while Pair panels is armed (or the Hand taken up from it)
+  const pairing = app.mode === 'map' && (app.tool === 'mpair' || (app.tool === 'hand' && handFrom === 'mpair'));
+  if (pairing && !pairingOn) actions.pairStart();
+  else if (!pairing && pairingOn) actions.pairEnd();
+  pairingOn = pairing;
   cv.classList.toggle('draw', (app.tool !== 'select' && app.tool !== 'mpick' && app.tool !== 'hand') || app.trimming);
   handCursor();
 };
@@ -1123,6 +1131,98 @@ const actions = {
     setMirror(m, r, id || null);
     const n = id ? addTwins(m).length : 0; // links made before the pairing get their twins now
     actions.mapChanged(id ? `${r.name} paired with ${regionById(m, id).name}${n ? `, and ${n} link${n > 1 ? 's' : ''} copied to the other side` : ''}` : `${r.name} unpaired`);
+  },
+  // ---- the pairing list (Pair panels): twins suggested, checked one by one ----
+  // Opening it pairs the panels whose outlines match exactly; everything else waits to be checked.
+  pairStart() {
+    const m = app.doc.regionMap;
+    if (!m) return;
+    const exact = pairList(m).pairs.filter(p => p.exact && !unpaired.has(`${p.a.id}|${p.b.id}`));
+    for (const p of exact) setMirror(m, p.a, p.b.id);
+    if (!exact.length) return;
+    const n = addTwins(m).length;
+    actions.mapChanged(`${exact.length} pair${exact.length > 1 ? 's' : ''} matched exactly and ${exact.length > 1 ? 'were' : 'was'} paired: they are under Paired to check${n ? `, and ${n} link${n > 1 ? 's' : ''} copied to the other side` : ''}`);
+  },
+  async pairEnd() {
+    app.pairOpen = app.pairHover = null;
+    if (pairGuide === null) return;
+    setGuidePink(null);
+    await syncGuide(app.doc, pairGuide); // the car goes back to how it was
+    pairGuide = null;
+    change({ now: true });
+  },
+  pairHover(ids) {
+    if (String(ids) === String(app.pairHover)) return;
+    app.pairHover = ids; requestDraw();
+  },
+  // the row, open (its panels pink on the sheet and on the car), or closed again
+  pairOpen(key) {
+    if (app.pairOpen && app.pairOpen.key === key) return actions.pairClose();
+    actions.pairShow({ key, ids: key.split('|') });
+  },
+  pairClose() { app.pairOpen = null; actions.pairShow(null); },
+  // msg: said once the car has caught up. One undo step, the map edit before it included
+  // ponytail: opening a row is an undo step too (the guide on the car changes); skip capture if that gets in the way
+  async pairShow(open, msg) {
+    app.pairOpen = open;
+    requestDraw(); ui.refresh();
+    if (pairGuide === null) pairGuide = !!guideLayer(app.doc);
+    setGuidePink(open ? open.ids : null);
+    await syncGuide(app.doc, true);
+    change({ now: true });
+    if (msg) ui.say(msg);
+  },
+  // a panel clicked on the sheet while a row is open: the one to pair its first panel with
+  pairPick(id) {
+    const o = app.pairOpen;
+    if (!o || id === o.ids[0]) return;
+    actions.pairShow({ key: o.key, ids: [o.ids[0], id] });
+  },
+  // on to the next suggestion, or the row closes when there is none
+  pairNext(msg) {
+    const p = pairList(app.doc.regionMap).pairs[0];
+    actions.pairShow(p ? { key: `${p.a.id}|${p.b.id}`, ids: [p.a.id, p.b.id] } : null, msg);
+  },
+  pairConfirm() {
+    const m = app.doc.regionMap, o = app.pairOpen, [a, b] = o ? o.ids.map(id => regionById(m, id)) : [];
+    if (!a || !b) return;
+    setMirror(m, a, b.id);
+    const n = addTwins(m).length;
+    actions.pairNext(`${a.name} paired with ${b.name}${n ? `, and ${n} link${n > 1 ? 's' : ''} copied to the other side` : ''}`);
+  },
+  // checked: these panels have no twin, so they are not suggested again
+  pairNone() {
+    const m = app.doc.regionMap, rs = app.pairOpen ? app.pairOpen.ids.map(id => regionById(m, id)).filter(r => r && !r.mirror) : [];
+    if (!rs.length) return;
+    for (const r of rs) r.noPair = true;
+    actions.pairNext(`${rs.map(r => r.name).join(' and ')}: no pair`);
+  },
+  pairHasPair() {
+    const m = app.doc.regionMap, r = app.pairOpen && regionById(m, app.pairOpen.ids[0]);
+    if (!r) return;
+    delete r.noPair;
+    app.pairOpen.key = r.id; // its row moves to No match found
+    actions.mapChanged(`${r.name} can be paired again`);
+  },
+  pairUnpair() {
+    const m = app.doc.regionMap, r = app.pairOpen && regionById(m, app.pairOpen.ids[0]);
+    if (!r || !r.mirror) return;
+    const was = regionById(m, r.mirror);
+    setMirror(m, r, null);
+    for (const k of [`${r.id}|${was.id}`, `${was.id}|${r.id}`]) unpaired.add(k);
+    actions.pairShow({ key: `${r.id}|${was.id}`, ids: [r.id, was.id] }, `${r.name} and ${was.name} unpaired`);
+  },
+  pairRename(id, name) {
+    const m = app.doc.regionMap, r = regionById(m, id);
+    if (!r || !name || name === r.name) return;
+    renameRegion(m, r, name);
+    if (r.id !== id) { // the id follows the name
+      const swap = (x) => (x === id ? r.id : x);
+      if (app.pairOpen) app.pairOpen = { key: app.pairOpen.key.split('|').map(swap).join('|'), ids: app.pairOpen.ids.map(swap) };
+      if (app.piece === id) app.piece = r.id;
+      if (app.pairOpen) setGuidePink(app.pairOpen.ids);
+    }
+    actions.mapChanged();
   },
   mapFlip(kind) {
     const m = app.doc.regionMap, r = regionById(m, app.piece);
@@ -2529,6 +2629,7 @@ async function boot() {
     screenToDoc, docToScreen, requestDraw,
     say: ui.say, refreshChrome: ui.refreshChrome,
     setTool: actions.setTool, pickPiece: actions.pickPiece, mapChanged: actions.mapChanged, mapFlip: actions.mapFlip,
+    pairPick: actions.pairPick, pairClose: actions.pairClose,
   });
   carGrad = initCarGradient(app, {
     screenToDoc, docToScreen, requestDraw, say: ui.say,

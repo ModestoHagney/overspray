@@ -68,6 +68,7 @@ export function parseRegionMap(data) {
     if (r.kind === 'sponsor' || r.kind === 'number') out.kind = r.kind;
     if ([90, 180, 270].includes(r.rot)) out.rot = r.rot;
     if (MIRROR_KINDS.includes(r.mirrorKind) && out.mirror) out.mirrorKind = r.mirrorKind;
+    if (r.noPair === true && !out.mirror) out.noPair = true; // checked: it has no twin (see suggestPairs)
     return out;
   });
   for (const r of regions) {
@@ -372,7 +373,53 @@ export function setMirror(map, region, partnerId) {
     region.mirror = partner.id;
     partner.mirror = region.id;
     region.mirrorKind = partner.mirrorKind = guessMirrorKind(region, partner);
+    delete region.noPair; delete partner.noPair;
   }
+}
+
+// Twins the map could have but doesn't yet, for the Pair panels list to put to
+// the user. Panels already paired, given a centreline (they are their own twin)
+// or marked as having no pair are left out. Two panels are a candidate only at
+// the same size, give or take 5%; how well one's outline lands on the other's,
+// flipped the best way, is the fit (1: exactly, 0: off by a twentieth of their
+// size on average). Each panel is suggested with the one it fits best, and only
+// when that one fits it best back.
+// → { pairs: [{ a, b, fit, exact, weak }] best first, none: [panels with no suggestion] }
+// exact: the outlines match to under half a pixel (and 99%), with no other panel that close;
+// weak: a loose fit, or another panel fits nearly as well.
+export function suggestPairs(map) {
+  const open = map.regions.filter(r => !r.kind && !r.mirror && !r.center && !r.noPair);
+  const near = (p, q) => Math.abs(p - q) <= 0.05 * Math.max(p, q);
+  const score = new Map(), best = new Map();
+  for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
+    const a = open[i], b = open[j];
+    if (!(near(a.w, b.w) && near(a.h, b.h)) && !(near(a.w, b.h) && near(a.h, b.w))) continue;
+    const n = 2 * (regionOutline(a).length + regionOutline(b).length);
+    const miss = mirrorMiss(a, b, guessMirrorKind(a, b)) / n; // on average, in px
+    for (const [p, q] of [[a, b], [b, a]]) {
+      const s = score.get(p) || [];
+      s.push({ q, miss });
+      score.set(p, s);
+    }
+  }
+  for (const [p, s] of score) { s.sort((x, y) => x.miss - y.miss); best.set(p, s); }
+  const pairs = [], paired = new Set();
+  for (const a of open) {
+    const s = best.get(a);
+    if (!s || paired.has(a)) continue;
+    const b = s[0].q, back = best.get(b);
+    if (back[0].q !== a) continue;
+    const size = (a.w + a.h + b.w + b.h) / 4, miss = s[0].miss;
+    const fit = Math.max(0, 1 - miss / (0.05 * size));
+    if (fit <= 0) continue;
+    // the runner-up for either panel, as a share of this fit's miss
+    const second = Math.min(s[1] ? s[1].miss : Infinity, back[1] ? back[1].miss : Infinity);
+    const close = second < Math.max(miss * 1.5, miss + 0.5);
+    pairs.push({ a, b, fit, exact: miss < 0.5 && fit >= 0.99 && !close, weak: fit < 0.8 || close });
+    paired.add(a); paired.add(b);
+  }
+  pairs.sort((x, y) => y.fit - x.fit);
+  return { pairs, none: open.filter(r => !paired.has(r)) };
 }
 
 // the region's shape as corners: its outline, or the four corners of its box

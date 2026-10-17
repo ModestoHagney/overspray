@@ -2,7 +2,7 @@
 // the panel cards, dialogs, the right-click menu and the toast. It reads the
 // app state and calls back into `actions`; it holds no livery state itself.
 
-import { pieces, hue } from './map.js';
+import { pieces, hue, pairList } from './map.js';
 import { SHAPES, PLAIN_SHAPES, roundedOf, plainOf, hollowOf, hollowed, softened, boxOutline, aspect, hasInner } from '../js/shapes.js';
 import { TEXT_FONTS, GOOGLE_FONTS, fadeStyleOf, carStops } from '../js/engine.js';
 import { FINISHES, finishName, finishLabel, finishList, layerColour, isArea, readFinish, presetOf } from '../js/finish.js';
@@ -540,7 +540,37 @@ export function initUI(app, actions, version) {
   function piecesHtml() {
     const list = pieces(app.doc.regionMap);
     if (!list.length) return '<div class="note">Load a template to get a map</div>';
+    if (app.tool === 'mpair') return pairsHtml(list);
     return list.map((r, i) => `<div class="row${r.id === app.piece ? ' sel' : ''}" data-piece="${esc(r.id)}"><span class="sw" style="background:${hue(i)}"></span><span class="name">${esc(r.name)}</span><span class="tags">${r.mirror ? '<i title="Has a twin">⇄</i>' : ''}${r.center ? '<i title="Has a centreline">┆</i>' : ''}</span></div>`).join('');
+  }
+  // Pair panels: the twins suggested, to check one by one; then the panels
+  // with no suggestion, the pairs made, and the panels checked as having none.
+  // A row opens (its panels go pink, on the car too) to name, confirm or change it.
+  function pairsHtml(list) {
+    const m = app.doc.regionMap, { pairs, none } = pairList(m), o = app.pairOpen;
+    const nameOf = (id) => (list.find((r) => r.id === id) || { name: id }).name;
+    const box = () => {
+      const [a, b] = o.ids.map((id) => list.find((r) => r.id === id)), together = a && b && a.mirror === b.id;
+      if (!a) return '';
+      const btn = (act, label, title = '') => `<button class="btn" data-act="${act}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+      return '<div class="pairbox">' + [a, b].filter(Boolean).map((r) => `<input class="pname" type="text" data-rname="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name of ${esc(r.name)}">`).join('') +
+        '<div class="acts">' + (together ? btn('pairUnpair', 'Unpair')
+          : a.noPair ? btn('pairHasPair', 'Has a pair', 'Puts it back in the list to pair')
+          : (b ? btn('pairConfirm', 'Confirm', 'These two are twins') : '') + btn('pairNone', 'No pair', b ? 'Neither of these has a twin' : 'It has no twin')) + '</div>' +
+        (together || a.noPair ? '' : `<div class="note">${b ? 'Wrong one? Click its pair on the sheet' : 'Click its pair on the sheet'}</div>`) + '</div>';
+    };
+    const row = (key, label, tag = '', weak = false) => {
+      const on = o && o.key === key;
+      return `<div class="row${on ? ' sel' : ''}" data-pairrow="${esc(key)}"><span class="name">${esc(label)}</span><span class="tags${weak ? ' weak' : ''}">${tag}</span></div>` + (on ? box() : '');
+    };
+    const twins = list.filter((r) => r.mirror && list.findIndex((x) => x.id === r.mirror) > list.indexOf(r));
+    const singles = list.filter((r) => r.noPair);
+    const part = (title, rows) => (rows.length ? `<div class="sub">${title}</div>` + rows.join('') : '');
+    return (pairs.length || none.length ? '' : '<div class="note">Every panel is checked</div>') +
+      part('Check these', pairs.map((p) => row(`${p.a.id}|${p.b.id}`, `${p.a.name} and ${p.b.name}`, `${Math.round(p.fit * 100)}%`, p.weak))) +
+      part('No match found', none.map((r) => row(r.id, r.name))) +
+      part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, `${r.name} and ${nameOf(r.mirror)}`))) +
+      part('No pair', singles.map((r) => row(r.id, r.name)));
   }
   // the shared map library: browse and share for everyone; review for admins
   // (see maplib.js), only offered when the page was opened with ?admin
@@ -790,6 +820,15 @@ export function initUI(app, actions, version) {
     box.focus();
     box.select();
   }
+  // the pairing list: the row under the pointer lights its panels; a name box renames its panel
+  panels.layers.addEventListener('pointerover', (e) => {
+    const row = e.target.closest && e.target.closest('[data-pairrow]');
+    actions.pairHover(row ? row.dataset.pairrow.split('|') : null);
+  });
+  panels.layers.addEventListener('pointerleave', () => actions.pairHover(null));
+  panels.layers.addEventListener('change', (e) => {
+    if (e.target.dataset.rname) actions.pairRename(e.target.dataset.rname, e.target.value.trim());
+  });
   panels.layers.addEventListener('dragend', () => { dragId = null; dropMark(null); });
 
   // Every colour box opens the app's own colour pop-up (see picker.js), which
@@ -1170,6 +1209,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.repcdrop !== undefined) return actions.dropRepeatColour(+t.dataset.repcdrop);
     if (t.dataset.fstopdrop !== undefined) return actions.dropFadeColour(+t.dataset.fstopdrop);
     if (t.dataset.piece) return actions.pickPiece(t.dataset.piece);
+    if (t.dataset.pairrow) return actions.pairOpen(t.dataset.pairrow);
     if (t.dataset.tool === 'image') return actions.openLibrary(); // nothing to arm: it opens the library
     if (t.dataset.tool === 'cargrad') return actions.addCarGradient(); // nor here: it adds one and opens its window
     if (t.dataset.tool) return actions.setTool(t.dataset.tool);
