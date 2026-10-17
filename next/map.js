@@ -7,6 +7,7 @@
 import { SIZE, createImageLayer, loadImage } from '../js/engine.js';
 import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, MIRROR_KINDS } from '../js/regions.js';
 import { pieceAt } from '../js/mirror.js';
+import { hexToRgb } from './picker.js';
 
 export const GUIDE = 'Panel guide'; // the layer that puts the panel colours on the car
 export const pieces = (map) => (map ? map.regions.filter(r => !r.kind) : []);
@@ -33,7 +34,7 @@ function labelOf(r, later) {
 const BANDS = ['#ffffff', '#101114', '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
   '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#469990', '#9a6324', '#808000'];
 const hueOf = (hex) => {
-  const [r, g, b] = [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16) / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  const [r, g, b] = hexToRgb(hex).map(v => v / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
   if (d < 0.2) return null; // white, black: never close to a panel
   const h = mx === r ? (g - b) / d : mx === g ? 2 + (b - r) / d : 4 + (r - g) / d;
   return (h * 60 + 360) % 360;

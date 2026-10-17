@@ -9,6 +9,7 @@
 // a soft horizon for metal to mirror.
 
 import { MATERIALS, specTexture, resolveParams } from '../js/engine.js';
+import { hexToRgb } from './picker.js';
 
 const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
 const L1 = norm([-0.5, -0.6, 0.62]);   // key light, upper left
@@ -33,7 +34,7 @@ export function renderTile(canvas, material, params, colour) {
     sctx.fillRect(0, 0, W, Ht);
   }
   const spec = sctx.getImageData(0, 0, W, Ht).data;
-  const rgb = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
+  const rgb = (c) => hexToRgb(c).map(v => v / 255);
   // the paint colour of each column of the tile
   const cols = Array.from({ length: W }, (_, x) => {
     if (!Array.isArray(colour)) return rgb(colour);

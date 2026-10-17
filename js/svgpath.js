@@ -7,9 +7,8 @@
 // run of them. An open piece is closed, as a fill closes it anyway.
 
 import { pointInPolygon } from './regions.js';
-import { flatten, reversed } from './shapes.js';
+import { flatten, reversed, lerp } from './shapes.js';
 
-const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 const same = (a, b, eps) => Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps;
 
 // d: the path data. tol: how far a curve may stray from the original, in the
