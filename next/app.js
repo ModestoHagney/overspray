@@ -1246,6 +1246,11 @@ const actions = {
     actions.mapChanged(`Centreline removed from ${r.name}`);
   },
   // One fade over the whole car, painted on each panel by its car line (see cargrad.js)
+  // the left strip's Car extras: the pit box colours, in Properties
+  openExtras() {
+    if (!(app.doc.pitbox || []).length) { ui.say('Load the car\'s template PSD first: the pit box colours come from it', true); return; }
+    actions.select(pitAt(app.sel) ? app.sel : 'pit0');
+  },
   addCarGradient() {
     if (app.mode !== 'paint') actions.setMode('paint');
     const l = createFillLayer(app.colour);
