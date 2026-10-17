@@ -549,7 +549,7 @@ export function initUI(app, actions, version) {
     if (rv) {
       return `<div class="note">Reviewing ${esc(rv.pr.file.replace(/^cars\//, ''))} · #${rv.pr.number} by ${esc(rv.pr.by)}</div>` +
         `<div class="seg"><button data-act="reviewOld" aria-pressed="${rv.side === 'old'}"${rv.old ? '' : ' disabled title="A new car: there is no map for it yet"'}>Old</button><button data-act="reviewNew" aria-pressed="${rv.side === 'new'}">New</button></div>` +
-        '<div class="acts"><button class="btn" data-act="reviewApprove" title="Merges it, with any fixes you made to New">Merge</button><button class="btn" data-act="reviewReject" title="Closes the pull request without merging">Reject</button></div>' +
+        `<div class="acts"><button class="btn" data-act="reviewApprove" title="Merges it, with any fixes you made to New"${rv.busy ? ' disabled' : ''}>${rv.busy === 'merge' ? 'Merging…' : 'Merge'}</button><button class="btn" data-act="reviewReject" title="Closes the pull request without merging"${rv.busy ? ' disabled' : ''}>${rv.busy === 'reject' ? 'Closing…' : 'Reject'}</button></div>` +
         '<div class="acts"><button class="btn" data-act="reviewStop" title="Back to this livery\'s own map; the pull request stays open">Stop</button></div>';
     }
     return '<div class="acts"><button class="btn" data-act="browseMaps" title="Maps other people have made, ready to load">Browse maps…</button><button class="btn" data-act="shareMap" title="Send this map to the shared library, through GitHub">Share map…</button></div>' +

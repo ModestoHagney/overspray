@@ -1200,6 +1200,7 @@ const actions = {
   // ---- the shared map library (see maplib.js) ----
   async browseMaps() {
     let list;
+    ui.say('Looking for shared maps…');
     try { list = await maplib.listMaps(); } catch (err) { ui.say('Could not reach the map library: ' + err.message, true); return; }
     const mine = maplib.mapFileName(app.doc.car, app.doc.regionMap && app.doc.regionMap.car);
     list.sort((a, b) => (b.name === mine) - (a.name === mine)); // this car's first
@@ -1240,6 +1241,7 @@ const actions = {
   async reviewMaps() {
     if (!app.admin) return actions.adminSignIn();
     let list;
+    ui.say('Looking for maps to review…');
     try { list = await maplib.openReviews(app.admin.key); } catch (err) { ui.say('Could not reach GitHub: ' + err.message, true); return; }
     const num = await ui.pickList({ title: 'Maps waiting for review', empty: 'Nothing waiting for review.',
       items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, ''), note: `#${pr.number} by ${pr.by}` })) });
@@ -1274,24 +1276,24 @@ const actions = {
     if (!r || r.busy) return; // a second click while GitHub is still merging
     if (r.side === 'new') r.next = app.doc.regionMap;
     const now = JSON.stringify(r.next);
-    r.busy = true;
+    r.busy = 'merge'; ui.refresh(); // the button says Merging… until GitHub answers
     try {
       await maplib.approve(app.admin.key, r.pr, now === r.text ? null : JSON.stringify(r.next, null, 2));
       ui.say(`Merged #${r.pr.number}${now === r.text ? '' : ', with your fixes'}`);
       await actions.reviewStop();
     } catch (err) { ui.say('Could not merge: ' + err.message, true); }
-    r.busy = false;
+    r.busy = false; ui.refresh();
   },
   async reviewReject() {
     const r = app.review;
     if (!r || r.busy) return;
-    r.busy = true;
+    r.busy = 'reject'; ui.refresh();
     try {
       await maplib.reject(app.admin.key, r.pr);
       ui.say(`Closed #${r.pr.number} without merging`);
       await actions.reviewStop();
     } catch (err) { ui.say('Could not close it: ' + err.message, true); }
-    r.busy = false;
+    r.busy = false; ui.refresh();
   },
   // back to this livery's own map
   async reviewStop() {
