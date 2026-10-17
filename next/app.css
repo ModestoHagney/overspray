@@ -473,3 +473,7 @@ option.sect, option.act { text-align: left; text-align-last: left; }
 .pairbox .pname input { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bar); color: var(--fg); }
 .pairbox .acts { padding: 0; }
 .pairbox .note { padding: 0; }
+.row .name.two { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; }
+.row .name.two > span { overflow: hidden; text-overflow: ellipsis; }
+.row .name.two > span:last-child { text-align: right; }
+.row .name.two > i { font-style: normal; color: var(--muted); }
