@@ -6,7 +6,7 @@
 
 import { loadImage } from './engine.js';
 import { psdToTemplate } from './psd.js';
-import { createRegionMap, piecesRegionMap, uniqueRegionId } from './regions.js';
+import { createRegionMap, piecesRegionMap, uniqueRegionId, mapFit } from './regions.js';
 import { zonesToRegions, inferDecalPairs, applyOrientation } from './zones.js';
 
 // What the kit knows, merged into a region map (made if there is none).
@@ -84,12 +84,14 @@ const fileToDataURL = (file) => new Promise((resolve, reject) => {
 
 // file: a template PSD (pieces and zones are read from it) or a plain
 // picture (linework only). map: the doc's current region map, or null.
-// → { template: { img, src }, regionMap, pieces, zones, carName }
+// fit: how well the map already there matches this template's panels (see
+// mapFit), or null when there was nothing to compare
+// → { template: { img, src }, regionMap, pieces, zones, carName, fit }
 export async function loadTemplate(file, map = null) {
   const carName = file.name.replace(/\.[^.]+$/, '');
   if (!/\.psd$/i.test(file.name)) {
     const src = await fileToDataURL(file);
-    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName };
+    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null };
   }
   await ensurePsdReader();
   const res = await psdToTemplate(await file.arrayBuffer());
@@ -97,10 +99,11 @@ export async function loadTemplate(file, map = null) {
   if (res.decals) {
     try { decalData = res.decals.getContext('2d').getImageData(0, 0, res.decals.width, res.decals.height); } catch { /* no orientation hints */ }
   }
+  const fit = mapFit(map, piecesRegionMap(carName, res.pieces));
   const merged = templateRegions(map, { pieces: res.pieces, zones: res.zones, decalData }, carName);
   const src = res.wire ? linesPicture(res.wire) : res.src;
   return {
     template: { img: await loadImage(src), src },
-    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName,
+    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName, fit,
   };
 }

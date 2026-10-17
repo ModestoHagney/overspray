@@ -14,6 +14,10 @@ export const REGIONS_FORMAT = 'overspray-regions/1';
 //   same   — a plain copy, same orientation
 export const MIRROR_KINDS = ['flip', 'flipV', 'rot180', 'same'];
 
+// caps on what a map file may hold, so a shared map that is broken or hostile
+// cannot freeze the page; real cars use a small part of each
+export const MAP_LIMITS = { regions: 1000, points: 200000, links: 5000, name: 80 };
+
 export function createRegionMap(car) {
   return { format: REGIONS_FORMAT, car: car || 'unknown car', regions: [] };
 }
@@ -24,6 +28,12 @@ export function parseRegionMap(data) {
   if (!data || typeof data !== 'object') throw new Error('not a region map object');
   if (data.format !== REGIONS_FORMAT) throw new Error(`unknown format "${data.format}" (expected ${REGIONS_FORMAT})`);
   if (!Array.isArray(data.regions)) throw new Error('missing "regions" array');
+  if (data.regions.length > MAP_LIMITS.regions) throw new Error(`too many regions (over ${MAP_LIMITS.regions})`);
+  const nPoints = data.regions.reduce((n, r) => n + (r && Array.isArray(r.points) ? r.points.length : 0), 0);
+  if (nPoints > MAP_LIMITS.points) throw new Error(`outlines are too detailed (over ${MAP_LIMITS.points} corners)`);
+  for (const k of ['links', 'places', 'carLines']) {
+    if (Array.isArray(data[k]) && data[k].length > MAP_LIMITS.links) throw new Error(`too many ${k} (over ${MAP_LIMITS.links})`);
+  }
   const seen = new Set();
   const regions = data.regions.map((r, i) => {
     if (!r || typeof r !== 'object') throw new Error(`region ${i} is not an object`);
@@ -36,7 +46,7 @@ export function parseRegionMap(data) {
     if (r.w <= 0 || r.h <= 0) throw new Error(`region "${r.id}" has a non-positive size`);
     const out = {
       id: r.id,
-      name: typeof r.name === 'string' && r.name ? r.name : r.id,
+      name: (typeof r.name === 'string' && r.name ? r.name : r.id).slice(0, MAP_LIMITS.name),
       x: r.x, y: r.y, w: r.w, h: r.h,
     };
     if (typeof r.mirror === 'string' && r.mirror) out.mirror = r.mirror;
@@ -65,7 +75,7 @@ export function parseRegionMap(data) {
   }
   const map = {
     format: REGIONS_FORMAT,
-    car: typeof data.car === 'string' && data.car ? data.car : 'unknown car',
+    car: typeof data.car === 'string' && data.car ? data.car.slice(0, MAP_LIMITS.name) : 'unknown car',
     regions,
   };
   if (data.links !== undefined) {
@@ -111,6 +121,20 @@ export function parseRegionMap(data) {
     }).filter(cl => cl.regions.length);
   }
   return map;
+}
+
+// How well two maps' traced panels line up, 0..1: the share of outlined
+// panels (sponsor/number zones aside) that have a panel of the same box in the
+// other map, taken the worse way round. Maps traced from the same template
+// score 1; a map made for another car, or before iRacing redrew the template,
+// scores low. null when either map has no traced panels to compare.
+export function mapFit(a, b, tol = 4) {
+  const boxes = (m) => (m ? m.regions : []).filter(r => r.points && !r.kind);
+  const A = boxes(a), B = boxes(b);
+  if (!A.length || !B.length) return null;
+  const share = (P, Q) => P.filter(p => Q.some(q => Math.abs(p.x - q.x) <= tol && Math.abs(p.y - q.y) <= tol
+    && Math.abs(p.w - q.w) <= tol && Math.abs(p.h - q.h) <= tol)).length / P.length;
+  return Math.min(share(A, B), share(B, A));
 }
 
 export function regionById(map, id) {

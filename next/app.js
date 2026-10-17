@@ -18,6 +18,7 @@ import * as persist from '../js/persist.js';
 import { loadTemplate } from '../js/template.js';
 import { saveToIracing, paintFilenames, validCustid, exportPaintCanvas, paintsDir, carFolders, isPaintsFolder, matchCar } from '../js/iracing.js';
 import { initUI } from './ui.js';
+import * as maplib from './maplib.js';
 import { hexToRgb } from './picker.js';
 import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasAim } from './tools.js';
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
@@ -27,7 +28,7 @@ import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, laye
 import { initMap, syncGuide, guideLayer } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
-import { regionOutline, parseRegionMap, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
+import { regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
 
 export const VERSION = self.VERSION || 'unknown'; // from version.js, which the page loads first
 
@@ -67,6 +68,13 @@ export const app = {
   ftarget: null,
   fmore: [],                          // more targets picked with Ctrl or Shift: a change to ftarget's finish goes on them too
   finishKind: 'matte',                // the finish a newly drawn area starts with
+  // the shared map library's admin, if signed in: { key, login }; asked for
+  // only when the page is opened with ?admin, so nobody else sees it
+  admin: null,
+  adminAsk: /[?&]admin\b/.test(location.search),
+  // a shared map being reviewed: { pr, prev (this livery's own map, put
+  // back after), old, next (the maps; old is null for a new car), text, side }
+  review: null,
 };
 let ui = null, tools = null, mapTools = null, carGrad = null;
 // who the pointer talks to (a car line being drawn on the sheet: the car gradient window)
@@ -436,6 +444,12 @@ function change({ panels = true, now = false } = {}) {
 }
 
 let saveTimer = null, lastJson = null, saveWarned = false;
+// A map and a template "fit" when nearly all their traced panels line up
+// (see mapFit); less, and the map was made for another car or for an older
+// version of this car's template, so its links may land in the wrong places
+const FIT_OK = 0.9;
+const misfit = (fit, what) => `${what} doesn't match: only ${Math.round(fit * 100)}% of panels line up. It may be for another car, or the template has changed.`;
+const MAP_FILE_MAX = 10 * 1024 * 1024; // a real map is well under 1 MB
 const SAVE_FAILED = 'Could not save in the browser: its storage may be full. Export TGA keeps a copy of the paint.';
 function projectThumb() {
   const c = document.createElement('canvas');
@@ -858,7 +872,8 @@ const actions = {
       fit();
       change();
       await actions.findCar(t.carName);
-      ui.say((t.pieces ? `${t.pieces} panels found` : 'Template loaded') + (d.target === 'car' && d.car ? ` · Car folder: ${d.car}` : ''));
+      if (t.fit !== null && t.fit < FIT_OK) ui.say(misfit(t.fit, 'This template'), true);
+      else ui.say((t.pieces ? `${t.pieces} panels found` : 'Template loaded') + (d.target === 'car' && d.car ? ` · Car folder: ${d.car}` : ''));
     } catch (err) {
       ui.say('Could not load that template: ' + (err.message || 'unknown error'), true);
     }
@@ -1155,12 +1170,24 @@ const actions = {
   guideOn: () => !!guideLayer(app.doc),
   pickMapFile: () => $('file-map').click(),
   async loadMapFile(file) {
+    if (file.size > MAP_FILE_MAX) { ui.say('Could not read that map: the file is too big for a map', true); return; }
+    await actions.loadMapText(await file.text());
+  },
+  // → the map, or null when it could not be read (and said so)
+  async loadMapText(text) {
     try {
-      app.doc.regionMap = parseRegionMap(JSON.parse(await file.text()));
+      if (text.length > MAP_FILE_MAX) throw new Error('the file is too big for a map');
+      const map = parseRegionMap(JSON.parse(text));
+      // the map there now came from the template, when one is loaded
+      const fit = mapFit(app.doc.regionMap, map);
+      app.doc.regionMap = map;
       app.piece = null;
-      actions.mapChanged(`Map loaded: ${app.doc.regionMap.regions.length} regions`);
+      await actions.mapChanged(`Map loaded: ${map.regions.length} regions`);
+      if (fit !== null && fit < FIT_OK) ui.say(misfit(fit, 'This map'), true);
+      return map;
     } catch (err) {
       ui.say('Could not read that map: ' + (err.message || 'not a map file'), true);
+      return null;
     }
   },
   saveMap() {
@@ -1168,6 +1195,115 @@ const actions = {
     if (!m) return;
     const name = (m.car || 'car').trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase() || 'car';
     download(new Blob([JSON.stringify(m, null, 2)], { type: 'application/json' }), name + '.regions.json');
+  },
+
+  // ---- the shared map library (see maplib.js) ----
+  async browseMaps() {
+    let list;
+    ui.say('Looking for shared maps…');
+    try { list = await maplib.listMaps(); } catch (err) { ui.say('Could not reach the map library: ' + err.message, true); return; }
+    const mine = maplib.mapFileName(app.doc.car, app.doc.regionMap && app.doc.regionMap.car);
+    list.sort((a, b) => (b.name === mine) - (a.name === mine)); // this car's first
+    const pick = await ui.pickList({ title: 'Shared maps', empty: 'No maps shared yet.',
+      items: list.map(f => ({ id: f.url, name: f.name.replace(/\.json$/, ''), note: f.name === mine ? 'This car' : '' })) });
+    if (!pick) return;
+    try { await actions.loadMapText(await maplib.fetchMap(pick)); } catch (err) { ui.say('Could not load that map: ' + err.message, true); }
+  },
+  // the map saved under the car's name, then GitHub's upload page for it,
+  // which turns the upload into a pull request for anyone without write access
+  shareMap() {
+    const m = app.doc.regionMap;
+    if (!m || !m.regions.length) { ui.say('Make a map first', true); return; }
+    if (!app.doc.car) { ui.say('Link your paints folder and choose the car first, so the map gets the car\'s name', true); return; }
+    const name = maplib.mapFileName(app.doc.car);
+    download(new Blob([JSON.stringify(m, null, 2)], { type: 'application/json' }), name);
+    const tab = window.open(maplib.uploadPage, '_blank');
+    if (tab) tab.opener = null;
+    ui.say(tab ? `Saved ${name}. Drop it onto the GitHub page that opened, then press Propose changes.` : 'Allow pop-ups for this site to open GitHub', !tab);
+  },
+
+  // admins: a GitHub key of theirs that can write to the maps repo
+  async adminSignIn() {
+    const key = await ui.askText({ title: 'Sign in to review maps', label: 'GitHub key', ok: 'Sign in' });
+    if (!key) return;
+    try {
+      app.admin = { key, login: await maplib.signIn(key) };
+      persist.saveSetting('mapsKey', key).catch(() => {});
+      ui.say(`Signed in as ${app.admin.login}`);
+    } catch (err) { ui.say('Could not sign in: ' + err.message, true); }
+    ui.refresh();
+  },
+  adminSignOut() {
+    app.admin = null;
+    persist.saveSetting('mapsKey', null).catch(() => {});
+    ui.refresh();
+  },
+  async reviewMaps() {
+    if (!app.admin) return actions.adminSignIn();
+    let list;
+    ui.say('Looking for maps to review…');
+    try { list = await maplib.openReviews(app.admin.key); } catch (err) { ui.say('Could not reach GitHub: ' + err.message, true); return; }
+    const num = await ui.pickList({ title: 'Maps waiting for review', empty: 'Nothing waiting for review.',
+      items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, ''), note: `#${pr.number} by ${pr.by}` })) });
+    const pr = list.find(x => String(x.number) === num);
+    if (!pr) return;
+    try {
+      const { next, now } = await maplib.reviewMaps(app.admin.key, pr);
+      const prev = app.doc.regionMap;
+      const map = await actions.loadMapText(next);
+      if (!map) return;
+      let old = null;
+      try { old = now && parseRegionMap(JSON.parse(now)); } catch { /* an unreadable old map: nothing to compare */ }
+      app.review = { pr, prev, old, next: map, text: JSON.stringify(map), side: 'new' };
+      ui.refresh();
+    } catch (err) { ui.say('Could not load that pull request: ' + err.message, true); }
+  },
+  // Old / New: which map is on the sheet (and on the car, with Show on car).
+  // Fixes go on New; Old is only for looking at.
+  async reviewSide(side) {
+    const r = app.review;
+    if (!r || side === r.side || (side === 'old' && !r.old)) return;
+    if (r.side === 'new') r.next = app.doc.regionMap;
+    r.side = side;
+    app.doc.regionMap = side === 'old' ? r.old : r.next;
+    app.piece = null;
+    await actions.mapChanged(side === 'old' ? 'Showing the map there now' : 'Showing the new map');
+  },
+  reviewOld: () => actions.reviewSide('old'),
+  reviewNew: () => actions.reviewSide('new'),
+  async reviewApprove() {
+    const r = app.review;
+    if (!r || r.busy) return; // a second click while GitHub is still merging
+    if (r.side === 'new') r.next = app.doc.regionMap;
+    const now = JSON.stringify(r.next);
+    r.busy = 'merge'; ui.refresh(); // the button says Merging… until GitHub answers
+    try {
+      await maplib.approve(app.admin.key, r.pr, now === r.text ? null : JSON.stringify(r.next, null, 2));
+      ui.say(`Merged #${r.pr.number}${now === r.text ? '' : ', with your fixes'}`);
+      await actions.reviewStop();
+    } catch (err) { ui.say('Could not merge: ' + err.message, true); }
+    r.busy = false; ui.refresh();
+  },
+  async reviewReject() {
+    const r = app.review;
+    if (!r || r.busy) return;
+    r.busy = 'reject'; ui.refresh();
+    try {
+      await maplib.reject(app.admin.key, r.pr);
+      ui.say(`Closed #${r.pr.number} without merging`);
+      await actions.reviewStop();
+    } catch (err) { ui.say('Could not close it: ' + err.message, true); }
+    r.busy = false; ui.refresh();
+  },
+  // back to this livery's own map
+  async reviewStop() {
+    const r = app.review;
+    if (!r) return;
+    app.review = null;
+    app.doc.regionMap = r.prev;
+    app.piece = null;
+    await actions.mapChanged();
+    ui.refresh();
   },
 
   // ---- painting from the map ----
@@ -2313,6 +2449,8 @@ async function boot() {
   try { applyStoredTheme(localStorage.getItem('next-theme')); } catch { /* default theme */ }
   app.doc = newDoc();
   app.custid = (await persist.loadSetting('custid').catch(() => '')) || '';
+  const mapsKey = await persist.loadSetting('mapsKey').catch(() => null);
+  if (mapsKey) app.admin = { key: mapsKey, login: '' }; // checked by GitHub on its first use
   app.live = !!(await persist.loadSetting('liveSync').catch(() => false)) && persist.fsSupported();
   if (app.live) {
     // After a reload the browser wants a click before it lets the page write

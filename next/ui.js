@@ -542,9 +542,23 @@ export function initUI(app, actions, version) {
     if (!list.length) return '<div class="note">Load a template to get a map</div>';
     return list.map((r, i) => `<div class="row${r.id === app.piece ? ' sel' : ''}" data-piece="${esc(r.id)}"><span class="sw" style="background:${hue(i)}"></span><span class="name">${esc(r.name)}</span><span class="tags">${r.mirror ? '<i title="Has a twin">⇄</i>' : ''}${r.center ? '<i title="Has a centreline">┆</i>' : ''}</span></div>`).join('');
   }
+  // the shared map library: browse and share for everyone; review for admins
+  // (see maplib.js), only offered when the page was opened with ?admin
+  function libraryHtml() {
+    const rv = app.review;
+    if (rv) {
+      return `<div class="note">Reviewing ${esc(rv.pr.file.replace(/^cars\//, ''))} · #${rv.pr.number} by ${esc(rv.pr.by)}</div>` +
+        `<div class="seg"><button data-act="reviewOld" aria-pressed="${rv.side === 'old'}"${rv.old ? '' : ' disabled title="A new car: there is no map for it yet"'}>Old</button><button data-act="reviewNew" aria-pressed="${rv.side === 'new'}">New</button></div>` +
+        `<div class="acts"><button class="btn" data-act="reviewApprove" title="Merges it, with any fixes you made to New"${rv.busy ? ' disabled' : ''}>${rv.busy === 'merge' ? 'Merging…' : 'Merge'}</button><button class="btn" data-act="reviewReject" title="Closes the pull request without merging"${rv.busy ? ' disabled' : ''}>${rv.busy === 'reject' ? 'Closing…' : 'Reject'}</button></div>` +
+        '<div class="acts"><button class="btn" data-act="reviewStop" title="Back to this livery\'s own map; the pull request stays open">Stop</button></div>';
+    }
+    return '<div class="acts"><button class="btn" data-act="browseMaps" title="Maps other people have made, ready to load">Browse maps…</button><button class="btn" data-act="shareMap" title="Send this map to the shared library, through GitHub">Share map…</button></div>' +
+      (app.admin ? '<div class="acts"><button class="btn" data-act="reviewMaps">Review maps…</button><button class="btn" data-act="adminSignOut">Sign out</button></div>'
+        : app.adminAsk ? '<div class="acts"><button class="btn" data-act="adminSignIn">Sign in to review…</button></div>' : '');
+  }
   function pieceHtml() {
     const m = app.doc.regionMap, list = pieces(m);
-    if (!list.length) return '<div class="note">Load a template to get a map</div>';
+    if (!list.length) return '<div class="note">Load a template to get a map</div>' + libraryHtml();
     const r = list.find((x) => x.id === app.piece);
     const top = !r ? '<div class="note">Click a panel</div>'
       : field('Name', `<input id="m-name" type="text" value="${esc(r.name)}">`) +
@@ -558,7 +572,8 @@ export function initUI(app, actions, version) {
     return top + '<hr class="rule">' +
       `<label class="switch">Panel colours<input id="m-colours" type="checkbox"${app.mapShow.colours ? ' checked' : ''}></label>` +
       `<label class="switch" title="Paints the panel colours and names onto the car, so you can see which panel is which in the sim">Show on car<input id="m-guide" type="checkbox"${actions.guideOn() ? ' checked' : ''}></label>` +
-      '<div class="acts"><button class="btn" data-act="pickMapFile">Load map…</button><button class="btn" data-act="saveMap">Save map…</button></div>';
+      '<div class="acts"><button class="btn" data-act="pickMapFile">Load map…</button><button class="btn" data-act="saveMap">Save map…</button></div>' +
+      '<hr class="rule">' + libraryHtml();
   }
   // colours in use; `max`: how many, for the swatches
   function usedColours(max = 14) {
@@ -876,12 +891,13 @@ export function initUI(app, actions, version) {
     const h = Math.round(m / 60);
     return h < 24 ? h + ' h ago' : Math.round(h / 24) + ' days ago';
   };
-  async function pickProject(list) {
+  // a list to pick one from: items [{ id, name, note }] → the picked id, or null
+  async function pickList({ title, items, empty }) {
     let picked = null;
-    const body = list.length
-      ? `<div class="plist">${list.map((p) => `<button type="button" data-id="${esc(p.id)}">${p.thumb ? `<img alt="" src="${esc(p.thumb)}">` : ''}<span><b>${esc(p.name || 'untitled')}</b><small>${p.updatedAt ? ago(p.updatedAt) : ''}</small></span></button>`).join('')}</div>`
-      : '<div class="note">No saved projects yet.</div>';
-    const p = ask({ title: 'Open a project', body, ok: null });
+    const body = items.length
+      ? `<div class="plist">${items.map((p) => `<button type="button" data-id="${esc(p.id)}">${p.thumb ? `<img alt="" src="${esc(p.thumb)}">` : ''}<span><b>${esc(p.name)}</b><small>${esc(p.note || '')}</small></span></button>`).join('')}</div>`
+      : `<div class="note">${esc(empty)}</div>`;
+    const p = ask({ title, body, ok: null });
     $('dlg-body').onclick = (e) => {
       const b = e.target.closest('button[data-id]');
       if (b) { picked = b.dataset.id; dlg.close('ok'); }
@@ -890,6 +906,8 @@ export function initUI(app, actions, version) {
     $('dlg-body').onclick = null;
     return picked;
   }
+  const pickProject = (list) => pickList({ title: 'Open a project', empty: 'No saved projects yet.',
+    items: list.map((p) => ({ id: p.id, thumb: p.thumb, name: p.name || 'untitled', note: p.updatedAt ? ago(p.updatedAt) : '' })) });
   async function carSetup(cur) {
     const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
     const body =
@@ -1264,5 +1282,5 @@ export function initUI(app, actions, version) {
 
   // put the cursor in a Properties box, ready to type over what is there
   const focusField = (id) => { const el = $(id); if (el) { el.focus(); if (el.select) el.select(); } };
-  return { layout, setLayout, refresh, refreshChrome, say, ask, askText, pickProject, carSetup, shortcuts, editColour, palettes, liveryColours, usedColours, focusField, library, mergeChoice };
+  return { layout, setLayout, refresh, refreshChrome, say, ask, askText, pickList, pickProject, carSetup, shortcuts, editColour, palettes, liveryColours, usedColours, focusField, library, mergeChoice };
 }

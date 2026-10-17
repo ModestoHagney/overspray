@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REGIONS_FORMAT, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline } from '../js/regions.js';
+import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline } from '../js/regions.js';
 
 // Convenience builder: a valid raw map with two mirrored door rectangles.
 function rawMap(overrides = {}) {
@@ -705,4 +705,28 @@ test('slideAlong moves a spot round the outline, kept to its edge by edgeSpan', 
   // gentle bends aren't corners: a curve of 10 degree turns has none
   const circle = Array.from({ length: 36 }, (_, i) => ({ x: 100 * Math.cos(i * Math.PI / 18), y: 100 * Math.sin(i * Math.PI / 18) }));
   assert.equal(edgeSpan(circle, 100, 0, 1), null);
+});
+
+// ---------------------------------------------------------------- shared maps
+
+test('parseRegionMap refuses maps over the size caps and cuts long names', () => {
+  const many = Array.from({ length: MAP_LIMITS.regions + 1 }, (_, i) => ({ id: 'r' + i, x: 0, y: 0, w: 1, h: 1 }));
+  assert.throws(() => parseRegionMap(rawMap({ regions: many })), /too many regions/);
+  const pts = Array.from({ length: MAP_LIMITS.points + 1 }, (_, i) => ({ x: i, y: i % 2 }));
+  assert.throws(() => parseRegionMap(rawMap({ regions: [{ id: 'a', x: 0, y: 0, w: 1, h: 1, points: pts }] })), /too detailed/);
+  const map = parseRegionMap(rawMap({ car: 'c'.repeat(500), regions: [{ id: 'a', name: 'n'.repeat(500), x: 0, y: 0, w: 1, h: 1 }] }));
+  assert.equal(map.car.length, MAP_LIMITS.name);
+  assert.equal(map.regions[0].name.length, MAP_LIMITS.name);
+});
+
+test('mapFit: same template scores 1, another car scores low, nothing traced is null', () => {
+  const sq = (x, y, s) => [{ x, y }, { x: x + s, y }, { x: x + s, y: y + s }, { x, y: y + s }];
+  const a = piecesRegionMap('car', [sq(0, 0, 100), sq(200, 0, 100), sq(400, 0, 50)]);
+  const b = piecesRegionMap('car', [sq(1, 0, 100), sq(200, 2, 100), sq(400, 0, 50)]);
+  a.regions[0].name = 'Bonnet'; // renaming and pairing don't change the fit
+  assert.equal(mapFit(a, b), 1);
+  const other = piecesRegionMap('other', [sq(0, 0, 100), sq(600, 600, 300)]);
+  assert.ok(mapFit(a, other) < 0.9);
+  assert.equal(mapFit(a, rawMap()), null);
+  assert.equal(mapFit(null, a), null);
 });
