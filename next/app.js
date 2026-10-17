@@ -1271,23 +1271,27 @@ const actions = {
   reviewNew: () => actions.reviewSide('new'),
   async reviewApprove() {
     const r = app.review;
-    if (!r) return;
+    if (!r || r.busy) return; // a second click while GitHub is still merging
     if (r.side === 'new') r.next = app.doc.regionMap;
     const now = JSON.stringify(r.next);
+    r.busy = true;
     try {
       await maplib.approve(app.admin.key, r.pr, now === r.text ? null : JSON.stringify(r.next, null, 2));
       ui.say(`Merged #${r.pr.number}${now === r.text ? '' : ', with your fixes'}`);
       await actions.reviewStop();
     } catch (err) { ui.say('Could not merge: ' + err.message, true); }
+    r.busy = false;
   },
   async reviewReject() {
     const r = app.review;
-    if (!r) return;
+    if (!r || r.busy) return;
+    r.busy = true;
     try {
       await maplib.reject(app.admin.key, r.pr);
       ui.say(`Closed #${r.pr.number} without merging`);
       await actions.reviewStop();
     } catch (err) { ui.say('Could not close it: ' + err.message, true); }
+    r.busy = false;
   },
   // back to this livery's own map
   async reviewStop() {
