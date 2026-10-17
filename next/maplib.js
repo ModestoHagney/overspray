@@ -53,6 +53,10 @@ export async function signIn(key) {
   return me.login;
 }
 
+// A browser saving a second copy of a map names it "car (1).json"; the car's
+// file is the name without that
+export const carFile = (f) => f.replace(/\s*\(\d+\)(?=\.json$)/, '');
+
 // open pull requests that change a car's map → [{ number, title, by, file, url }]
 export async function openReviews(key) {
   const prs = (await gh('/pulls?state=open&per_page=50', key)) || [];
@@ -69,19 +73,24 @@ export async function openReviews(key) {
 
 // the pull request's map and the one on main now (null for a new car) → { next, now }
 export async function reviewMaps(key, pr) {
-  const [next, cur] = await Promise.all([text(pr.url), gh(`/contents/${pr.file}?ref=main`, key)]);
+  const [next, cur] = await Promise.all([text(pr.url), gh(`/contents/${carFile(pr.file)}?ref=main`, key)]);
   return { next, now: cur ? await text(cur.download_url) : null };
 }
 
-// merge it; then, when the admin changed the map, write their fixes on top
+// merge it; then, when the admin changed the map, write their fixes on top.
+// A copy the browser named "car (1).json" goes over the car's own file instead.
 export async function approve(key, pr, fixed) {
   await gh(`/pulls/${pr.number}/merge`, key, { method: 'PUT', body: JSON.stringify({ merge_method: 'squash' }) });
-  if (fixed === null) return;
-  const cur = await gh(`/contents/${pr.file}?ref=main`, key);
+  const to = carFile(pr.file), moved = to !== pr.file;
+  if (fixed === null && !moved) return;
+  const merged = moved ? await gh(`/contents/${pr.file}?ref=main`, key) : null;
+  const body = fixed !== null ? fixed : await text(merged.download_url);
+  const cur = await gh(`/contents/${to}?ref=main`, key);
   let bin = '';
-  for (const b of new TextEncoder().encode(fixed)) bin += String.fromCharCode(b);
+  for (const b of new TextEncoder().encode(body)) bin += String.fromCharCode(b);
   const content = btoa(bin);
-  await gh(`/contents/${pr.file}`, key, { method: 'PUT', body: JSON.stringify({ message: `Fixes to ${pr.file} from review of #${pr.number}`, content, sha: cur && cur.sha, branch: 'main' }) });
+  await gh(`/contents/${to}`, key, { method: 'PUT', body: JSON.stringify({ message: fixed !== null ? `Fixes to ${to} from review of #${pr.number}` : `${pr.file} saved as ${to} (#${pr.number})`, content, sha: cur && cur.sha, branch: 'main' }) });
+  if (moved) await gh(`/contents/${pr.file}`, key, { method: 'DELETE', body: JSON.stringify({ message: `Remove ${pr.file}: saved as ${to}`, sha: merged.sha, branch: 'main' }) });
 }
 
 export const reject = (key, pr) => gh(`/pulls/${pr.number}`, key, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) });
