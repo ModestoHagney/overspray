@@ -42,6 +42,8 @@ const I = { // 20x20 line icons
   // a loose piece and the spot it sits at
   mplace: '<rect x="2.5" y="11" width="6" height="6" rx="1"/><path d="M11 3h6v6h-6z" stroke-dasharray="2 2"/><path d="m7 9 4.5-4.5M8.5 4.5h3v3"/>',
   // a bar of colour blocks: one fade over the whole car
+  // a toolbox: the car's own colours beyond the paint, such as the pit box's
+  extras: '<rect x="3" y="7" width="14" height="9" rx="1.5"/><path d="M7.5 7V5h5v2M3 11h14"/>',
   cargrad: '<rect x="2.5" y="6" width="15" height="8" rx="1.5"/><path d="M6.5 6v8M9.5 6v8M11.5 6v8M12.8 6v8"/>',
   eye: '<path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z"/><circle cx="10" cy="10" r="2.2"/>',
   float: '<rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M8 16h8V8"/>',
@@ -96,6 +98,7 @@ const TOOLS = [
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
   ['cargrad', 'New car gradient'],
+  ['extras', 'Car extras: pit box colours'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
 const FINISH_TOOLS = [
@@ -149,7 +152,7 @@ export function initUI(app, actions, version) {
 
   // ---------- menus ----------
   // [label, shortcut, action, { off, tick }]
-  const hasLayer = () => app.sel !== null && app.sel !== 'base';
+  const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.pitAt(app.sel);
   // what can be done to the selected shapes as shapes, and whether each applies now
   const shapeCan = () => {
     const ls = actions.selectedLayers(), fills = ls.filter((l) => l.type === 'fill' && !l.specOnly), one = ls.length === 1 ? ls[0] : null;
@@ -209,9 +212,9 @@ export function initUI(app, actions, version) {
     $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Finish']].map(([id, name]) =>
       `<button data-mode="${id}" aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
-    const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
+    const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
     $('tools').innerHTML = strip.map(([id, name]) =>
-      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
+      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.pitAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
     const opts = $('toolopts');
     if (app.tool === 'shape') {
@@ -362,7 +365,7 @@ export function initUI(app, actions, version) {
   // is changed. `name`: the markup that goes beside the colour.
   function colourHead(name) {
     const d = app.doc, sel = actions.selected(), open = openFolds.has('f-saved');
-    const linked = app.sel === 'base' ? d.baseRef : sel ? sel.colorRef : null;
+    const pit = actions.pitAt(app.sel), linked = app.sel === 'base' ? d.baseRef : pit ? pit.ref : sel ? sel.colorRef : null;
     const saved = d.palette.map((c) => `<span class="chipwrap"><button class="chip${c.id === linked ? ' on' : ''}" data-pal="${esc(c.id)}" title="${esc(c.name)} · ${esc(c.color.toUpperCase())}. Set to it, and it follows when this colour is changed. Right-click to rename or change."><i style="background:${esc(c.color)}"></i><span>${esc(c.name)}</span></button><button class="chipedit" data-edit="${esc(c.id)}" title="Rename or change" aria-label="Edit ${esc(c.name)}">${svg('edit')}</button></span>`).join('');
     // the colour's name under the selection's: its saved colour's, or the next "Colour n"
     const cur = actions.currentColour(), named = d.palette.find((c) => c.id === linked) || d.palette.find((c) => c.color === cur);
@@ -386,6 +389,12 @@ export function initUI(app, actions, version) {
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
+    if (actions.pitAt(app.sel)) { // Car extras: the pit box swatches, one at a time
+      const n = (app.doc.pitbox || []).length;
+      return colourHead(`<span class="pname">Pit box ${+app.sel.slice(3) + 1}</span>`) +
+        (n < 2 ? '' : `<div class="seg">${app.doc.pitbox.map((p, i) => `<button data-pitpick="pit${i}" aria-pressed="${app.sel === 'pit' + i}">Pit box ${i + 1}</button>`).join('')}</div>`) +
+        '<div class="note">iRacing colours your pit box from these</div>';
+    }
     const many = actions.selectedLayers();
     if (many.length > 1) { // several: what can be done to them together
       const grouped = many.some((x) => x.groupId);
@@ -1213,6 +1222,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.piece) return actions.pickPiece(t.dataset.piece);
     if (t.dataset.pairrow) return actions.pairOpen(t.dataset.pairrow);
     if (t.dataset.tool === 'image') return actions.openLibrary(); // nothing to arm: it opens the library
+    if (t.dataset.tool === 'extras') return actions.openExtras(); // nor here: it shows the car's extras in Properties
     if (t.dataset.tool === 'cargrad') return actions.addCarGradient(); // nor here: it adds one and opens its window
     if (t.dataset.tool) return actions.setTool(t.dataset.tool);
     if (t.dataset.edit) return actions.editColour(t.dataset.edit);
@@ -1233,6 +1243,7 @@ export function initUI(app, actions, version) {
       if (l) { l.visible = !l.visible; actions.change(); }
       return;
     }
+    if (t.dataset.pitpick) return actions.select(t.dataset.pitpick);
     if (t.dataset.layer) { // Shift: the whole run from the row clicked last to this one; Ctrl: add or take out this one
       if (e.shiftKey && t.dataset.layer !== 'base' && panels.layers.contains(t)) return actions.selectRange(t.dataset.layer);
       // a layer's own row is that layer alone, even in a group; the group's row is the group

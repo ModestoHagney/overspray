@@ -73,6 +73,13 @@ test('a repeat keeps its settings through save and load, cleaned; an old pattern
   assert.equal(back.layers[1].repeat, undefined);
 });
 
+test('pit box swatches keep their place and colour through save and load, cleaned', async () => {
+  const doc = createDoc();
+  doc.pitbox = [{ x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: 'gone' }, { x: 9999, y: -5, w: 27, h: 24, color: '#03ff32', ref: null }, { x: 0, y: 0, w: 1, h: 1, color: 'red' }];
+  const back = await deserializeDoc(JSON.parse(JSON.stringify(serializeDoc(doc))));
+  assert.deepEqual(back.pitbox, [{ x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: null }, { x: 2048, y: 0, w: 27, h: 24, color: '#03ff32', ref: null }]);
+});
+
 test('createFillLayer initializes colorMid/midPos and serializeDoc keeps them', () => {
   const fill = createFillLayer('#123456');
   assert.equal(fill.colorMid, null);
