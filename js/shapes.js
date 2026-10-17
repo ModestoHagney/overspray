@@ -9,7 +9,7 @@
 
 import { pointInPolygon } from './regions.js';
 
-const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+export const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
 // where each piece starts and stops in the list: [[start, end), …]
 export function pieces(pts) {

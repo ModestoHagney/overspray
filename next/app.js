@@ -18,6 +18,7 @@ import * as persist from '../js/persist.js';
 import { loadTemplate } from '../js/template.js';
 import { saveToIracing, paintFilenames, validCustid, exportPaintCanvas, paintsDir, carFolders, isPaintsFolder, matchCar } from '../js/iracing.js';
 import { initUI } from './ui.js';
+import { hexToRgb } from './picker.js';
 import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasAim } from './tools.js';
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
@@ -74,7 +75,7 @@ const onSheet = () => (app.mode === 'map' ? mapTools : carGrad && carGrad.drawin
 // ---------- the doc ----------
 
 const luminance = (hex) => {
-  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = hexToRgb(hex).map(v => v / 255);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 // template linework has to read against the base coat it sits on
