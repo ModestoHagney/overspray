@@ -27,7 +27,7 @@ test('Fill panel: Shift+click adds the panel to the same layer', () => {
   tools.down({ shiftKey: false }, { x: 100, y: 100 });
   tools.down({ shiftKey: true }, { x: 1100, y: 100 });
   assert.equal(app.doc.layers.length, 1);
-  assert.equal(app.doc.layers[0].name, 'Door + Roof');
+  assert.equal(app.doc.layers[0].name, 'door + roof'); // panel names are lowercase (see cleanName)
   assert.equal(pieces(app.doc.layers[0].pts).length, 2);
   tools.down({ shiftKey: false }, { x: 1100, y: 100 }); // a plain click is a new layer, as before
   assert.equal(app.doc.layers.length, 2);

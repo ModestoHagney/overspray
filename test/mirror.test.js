@@ -130,7 +130,7 @@ test('a filled C-shaped panel mirrors onto its twin, though the middle of its bo
   assert.equal(dst.id, 'c2');
   assert.ok(copy.pts.every(p => p.x >= 1000 && p.x <= 1300));
   // a shape that sits wholly in the gap still belongs to the gap's panel
-  assert.match(mirrorLayer(m, shape(box(120, 120, 60, 40))).error, /Wheel has no twin/);
+  assert.match(mirrorLayer(m, shape(box(120, 120, 60, 40))).error, /wheel has no twin/);
 });
 
 test('a Continues layer is trimmed to its panel and carried over each linked edge', () => {
