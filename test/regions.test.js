@@ -23,7 +23,7 @@ test('parseRegionMap accepts a valid map and preserves geometry', () => {
   assert.equal(map.regions.length, 2);
   const l = map.regions[0];
   assert.deepEqual(l, {
-    id: 'door_l', name: 'Left Door', x: 100, y: 200, w: 300, h: 150, mirror: 'door_r' });
+    id: 'door_l', name: 'left_door', x: 100, y: 200, w: 300, h: 150, mirror: 'door_r' }); // names are made lowercase_with_underscores
 });
 
 test('parseRegionMap normalizes a missing name to the id', () => {
@@ -183,7 +183,7 @@ test('regionAt boundaries are inclusive on all edges', () => {
 
 test('regionById returns the region or null', () => {
   const map = parseRegionMap(rawMap());
-  assert.equal(regionById(map, 'door_l').name, 'Left Door');
+  assert.equal(regionById(map, 'door_l').name, 'left_door');
   assert.equal(regionById(map, 'nope'), null);
 });
 
@@ -298,8 +298,8 @@ test('detectPieces finds one outline per separate mesh, largest first', () => {
   assert.equal(pieces.length, 2);
   const map = piecesRegionMap('test car', pieces);
   assert.deepEqual(map.regions.map(r => [r.id, r.name, r.x, r.y, r.w, r.h]), [
-    ['piece_1', 'Panel 1', 80, 20, 101, 81],
-    ['piece_2', 'Panel 2', 10, 10, 41, 31],
+    ['piece_1', 'panel_1', 80, 20, 101, 81],
+    ['piece_2', 'panel_2', 10, 10, 41, 31],
   ]);
   assert.equal(map.regions[0].points.length, 4); // a box simplifies to its corners
   parseRegionMap(map); // what detection produces must load as a map
@@ -334,8 +334,8 @@ test('renameRegion makes the id follow the name and repoints the mirror partner'
   const map = parseRegionMap(rawMap());
   renameRegion(map, regionById(map, 'door_l'), 'Driver Door');
   assert.deepEqual(map.regions.map(r => [r.id, r.name, r.mirror]), [
-    ['driver_door', 'Driver Door', 'door_r'],
-    ['door_r', 'Right Door', 'driver_door'],
+    ['driver_door', 'driver_door', 'door_r'],
+    ['door_r', 'right_door', 'driver_door'],
   ]);
   parseRegionMap(map); // still a valid map: no dangling mirror
 });
@@ -765,4 +765,17 @@ test('parseRegionMap keeps noPair only on a panel with no twin', () => {
   ] }));
   assert.equal(map.regions[0].noPair, true);
   assert.equal(map.regions[1].noPair, undefined);
+});
+
+test('panel names are cleaned: lowercase, no spaces or special characters', () => {
+  const map = parseRegionMap(rawMap({ regions: [
+    { id: 'a', name: 'Left Door!', x: 0, y: 0, w: 10, h: 10 },
+    { id: 'b', name: '  Rear  Wing (2) ', x: 20, y: 0, w: 10, h: 10 },
+    { id: 's', name: 'Sponsor 1 (200×100)', x: 40, y: 0, w: 10, h: 10, kind: 'sponsor' }, // a kit's own box keeps its label
+  ] }));
+  assert.deepEqual(map.regions.map(r => r.name), ['left_door', 'rear_wing_2', 'Sponsor 1 (200×100)']);
+  renameRegion(map, map.regions[0], 'Bonnet Scoop');
+  assert.equal(map.regions[0].name, 'bonnet_scoop');
+  renameRegion(map, map.regions[0], '!!!'); // nothing left: the name stays as it was
+  assert.equal(map.regions[0].name, 'bonnet_scoop');
 });

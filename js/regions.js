@@ -49,6 +49,7 @@ export function parseRegionMap(data) {
       name: (typeof r.name === 'string' && r.name ? r.name : r.id).slice(0, MAP_LIMITS.name),
       x: r.x, y: r.y, w: r.w, h: r.h,
     };
+    if (!r.kind) out.name = cleanName(out.name) || cleanName(r.id) || 'panel'; // panel names follow the rule, whoever wrote the file
     if (typeof r.mirror === 'string' && r.mirror) out.mirror = r.mirror;
     if (r.center !== undefined) {
       const { a, b } = r.center || {};
@@ -312,8 +313,12 @@ export function trimShape(r, x, y, bleed = 3) {
 }
 
 // slug a display name into an id that doesn't collide with the map's regions
+// Panel names are lowercase letters, digits and _ only (left_door, rear_wing_2):
+// a space or anything else becomes _. The id is made the same way.
+export const cleanName = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
 export function uniqueRegionId(name, map) {
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'region';
+  const base = cleanName(name) || 'region';
   let id = base, n = 2;
   while (map.regions.some(r => r.id === id)) id = base + '_' + (n++);
   return id;
@@ -322,6 +327,7 @@ export function uniqueRegionId(name, map) {
 // Rename a region. Its id follows the new name (see uniqueRegionId), and a
 // mirror partner pointing at the old id is repointed.
 export function renameRegion(map, region, name) {
+  if (!region.kind) name = cleanName(name) || region.name;
   const others = map.regions.filter(r => r !== region);
   const id = uniqueRegionId(name, { regions: others });
   for (const r of others) if (r.mirror === region.id) r.mirror = id;
@@ -583,7 +589,7 @@ export function piecesRegionMap(car, outlines) {
     const xs = points.map(q => q.x), ys = points.map(q => q.y);
     const x = Math.min(...xs), y = Math.min(...ys);
     map.regions.push({
-      id: `piece_${i + 1}`, name: `Panel ${i + 1}`, // the id keeps its old word: maps already saved use it
+      id: `piece_${i + 1}`, name: `panel_${i + 1}`, // the id keeps its old word: maps already saved use it
       x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, points,
     });
   });
