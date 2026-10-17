@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline } from '../js/regions.js';
+import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, mirrorPoint, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline, suggestPairs } from '../js/regions.js';
 
 // Convenience builder: a valid raw map with two mirrored door rectangles.
 function rawMap(overrides = {}) {
@@ -729,4 +729,40 @@ test('mapFit: same template scores 1, another car scores low, nothing traced is 
   assert.ok(mapFit(a, other) < 0.9);
   assert.equal(mapFit(a, rawMap()), null);
   assert.equal(mapFit(null, a), null);
+});
+
+test('suggestPairs finds twins, marks exact and weak ones, and leaves checked panels out', () => {
+  const box = (id, pts) => { const xs = pts.map(p => p.x), ys = pts.map(p => p.y); return { id, name: id, points: pts, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; };
+  const notched = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 60, y: 100 }, { x: 40, y: 60 }, { x: 0, y: 60 }];
+  const flip = (pts, at, dy = 0) => pts.map(p => ({ x: at - p.x, y: p.y + dy }));
+  const hood = notched.map(p => ({ x: p.x * 1.3, y: p.y * 0.6 + 900 }));
+  const wing = notched.map(p => ({ x: p.x * 0.7, y: p.y * 0.8 + 300 })); // another size: not the doors' twin
+  const map = { regions: [
+    box('door_l', notched), box('door_r', flip(notched, 900)),                                     // an exact mirror
+    box('wing_l', wing), box('wing_r', flip(wing, 900).map((p, i) => (i === 4 ? { x: p.x - 6, y: p.y } : p))), // near
+    box('roof', [{ x: 0, y: 600 }, { x: 400, y: 600 }, { x: 400, y: 700 }, { x: 0, y: 700 }]),     // no twin
+    box('hood', hood), box('boot', flip(hood, 900)),
+  ] };
+  map.regions[5].noPair = true; // checked by hand: not suggested
+  let s = suggestPairs(map);
+  const keyed = s.pairs.map(p => [p.a.id, p.b.id, p.exact]);
+  assert.deepEqual(keyed, [['door_l', 'door_r', true], ['wing_l', 'wing_r', false]]);
+  assert.ok(s.pairs[1].fit > 0.8 && s.pairs[1].fit < 1);
+  assert.deepEqual(s.none.map(r => r.id), ['roof', 'boot']);
+  setMirror(map, map.regions[0], 'door_r'); // paired: out of the list
+  s = suggestPairs(map);
+  assert.deepEqual(s.pairs.map(p => p.a.id), ['wing_l']);
+  // the same shape four times over: none of them is sure which is its twin
+  const many = { regions: [0, 1, 2, 3].map(k => box('p' + k, notched.map(p => ({ x: p.x + 300 * k, y: p.y })))) };
+  assert.ok(suggestPairs(many).pairs.every(p => p.weak && !p.exact));
+});
+
+test('parseRegionMap keeps noPair only on a panel with no twin', () => {
+  const map = parseRegionMap(rawMap({ regions: [
+    { id: 'roof', x: 0, y: 0, w: 10, h: 10, noPair: true },
+    { id: 'a', x: 20, y: 0, w: 10, h: 10, mirror: 'b', noPair: true },
+    { id: 'b', x: 40, y: 0, w: 10, h: 10, mirror: 'a' },
+  ] }));
+  assert.equal(map.regions[0].noPair, true);
+  assert.equal(map.regions[1].noPair, undefined);
 });

@@ -5,7 +5,7 @@
 // corrected.
 
 import { SIZE, createImageLayer, loadImage } from '../js/engine.js';
-import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, MIRROR_KINDS } from '../js/regions.js';
+import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, suggestPairs, MIRROR_KINDS } from '../js/regions.js';
 import { pieceAt } from '../js/mirror.js';
 import { hexToRgb } from './picker.js';
 
@@ -60,6 +60,20 @@ function linkKeys(m) {
 }
 const linkHue = (i) => `hsl(${(i * 137.5 + 40) % 360} 95% 62%)`;
 
+// Pair panels: the twins the map could still have (see suggestPairs), worked
+// out again only when the map changes, not on every redraw of the list
+let pairCache = { s: null, list: null };
+export function pairList(m) {
+  const s = JSON.stringify(m.regions.map(r => [r.id, r.mirror, r.noPair, !!r.center, r.points && r.points.length, r.x, r.y]));
+  if (s !== pairCache.s) pairCache = { s, list: suggestPairs(m) };
+  return pairCache.list;
+}
+// While the pairing list is open the sheet is grey, and the panels being
+// checked are pink, on the car too
+export const GREY = '#d4d4d8', PINK = '#ff2bd6';
+let pink = null; // ids of the panels the guide on the car shows pink, or null for the usual guide
+export const setGuidePink = (ids) => { pink = ids; };
+
 // The panel colours, names, linked edges and centrelines as a full-sheet
 // picture: what the "Show on car" guide layer is made of.
 export function guideCanvas(map) {
@@ -71,9 +85,10 @@ export function guideCanvas(map) {
   const trace = (pts) => { ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); };
   list.forEach((r, i) => {
     trace(regionOutline(r));
-    ctx.fillStyle = hue(i); ctx.fill();
+    ctx.fillStyle = pink ? (pink.includes(r.id) ? PINK : GREY) : hue(i); ctx.fill();
     ctx.strokeStyle = '#101114'; ctx.lineWidth = 3; ctx.stroke();
   });
+  if (pink) return c; // just the panels being checked, nothing else to look past
   const keys = linkKeys(map), at = (id) => panelHue(list.findIndex(r => r.id === id));
   (map.links || []).forEach((link, i) => {
     const n = Math.max(3, Math.min(16, Math.round(linkLength(map, link) / 48)));
@@ -347,6 +362,7 @@ export function initMap(app, env) {
     if (app.tool === 'mpair') {
       const r = pieceAt(map(), p.x, p.y);
       if (!r) { env.say('Click a panel'); return; }
+      if (app.pairOpen) { env.pairPick(r.id); return; } // a row of the list is open: this is the panel to pair it with instead
       if (!pairFirst) { pairFirst = r.id; env.pickPiece(r.id); return; }
       if (r.id === pairFirst) { env.say('Now click its pair, a different panel'); return; }
       const a = regionById(map(), pairFirst), before = map().regions.map(x => [x, x.mirror, x.mirrorKind]);
@@ -426,7 +442,8 @@ export function initMap(app, env) {
       return true;
     }
     if (e.key !== 'Escape') return false;
-    if (pending) { pending = null; requestDraw(); env.refreshChrome(); }
+    if (app.tool === 'mpair' && app.pairOpen) env.pairClose();
+    else if (pending) { pending = null; requestDraw(); env.refreshChrome(); }
     else if (pairFirst) { pairFirst = null; env.pickPiece(null); }
     else if (picked && app.tool === 'mlink') { picked = null; requestDraw(); env.refreshChrome(); }
     else if (ends.length) { ends = []; requestDraw(); env.refreshChrome(); }
@@ -441,6 +458,7 @@ export function initMap(app, env) {
     if (!map()) return 'Load a template to get a map';
     const takeBack = ' · Delete or Backspace takes one back';
     if (app.tool === 'mcentre') return (pending ? 'Click the matching corner on the other side' : 'Click a corner, then its match on the other side') + (app.centreFor ? '' : takeBack);
+    if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;
     if (app.tool === 'mpair') return (pairFirst ? `Now click the pair of ${nameOf(pairFirst)}` : 'Click a panel, then its pair on the other side of the car') + (!pairFirst && sel() && sel().mirror ? ' · F tries the next flip' : '') + takeBack;
     if (app.tool === 'mplace') return placing ? `Now drag the same line, front to back, where ${nameOf(placing.region)} sits on the car: over the panel it lies beside · Delete takes it back` : 'Drag a line along a loose piece (a wing, say), front to back. Placing it again moves it';
     if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click one end of an edge that meets another panel · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · Alt+click removes a link', 'Click the other end, on the same panel', 'Now the spot on the other panel that meets end 1', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
@@ -455,9 +473,11 @@ export function initMap(app, env) {
     const trace = (pts) => { ctx.beginPath(); pts.forEach((q, i) => { const a = S(q); i ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); }); ctx.closePath(); };
     const list = pieces(m), z = app.view.zoom;
     ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const pairing = app.tool === 'mpair', lit = pairing ? [...(app.pairHover || []), ...(app.pairOpen ? app.pairOpen.ids : [])] : [];
     list.forEach((r, i) => {
       trace(regionOutline(r));
-      if (app.mapShow.colours) { ctx.fillStyle = hue(i, 0.82); ctx.fill(); }
+      if (pairing) { ctx.fillStyle = lit.includes(r.id) ? PINK : GREY; ctx.fill(); }
+      else if (app.mapShow.colours) { ctx.fillStyle = hue(i, 0.82); ctx.fill(); }
       ctx.strokeStyle = '#101114'; ctx.lineWidth = 1.25; ctx.stroke();
     });
     for (const r of m.regions) { // the kit's own number and sponsor boxes
