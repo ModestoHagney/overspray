@@ -559,17 +559,19 @@ export function initUI(app, actions, version) {
           : (b ? btn('pairConfirm', 'Confirm', 'These two are twins') : '') + btn('pairNone', 'No pair', b ? 'Neither of these has a twin' : 'It has no twin')) + '</div>' +
         (together || a.noPair ? '' : `<div class="note">${b ? 'Wrong one? Click its pair on the sheet' : 'Click its pair on the sheet'}</div>`) + '</div>';
     };
+    // label: one name, or a pair's two: the first at the left, the second at the right, ⇄ between
     const row = (key, label, tag = '', weak = false) => {
       const on = o && o.key === key;
-      return `<div class="row${on ? ' sel' : ''}" data-pairrow="${esc(key)}"><span class="name">${esc(label)}</span><span class="tags${weak ? ' weak' : ''}">${tag}</span></div>` + (on ? box() : '');
+      const names = Array.isArray(label) ? `<span class="name two"><span>${esc(label[0])}</span><i>⇄</i><span>${esc(label[1])}</span></span>` : `<span class="name">${esc(label)}</span>`;
+      return `<div class="row${on ? ' sel' : ''}" data-pairrow="${esc(key)}">${names}<span class="tags${weak ? ' weak' : ''}">${tag}</span></div>` + (on ? box() : '');
     };
     const twins = list.filter((r) => r.mirror && list.findIndex((x) => x.id === r.mirror) > list.indexOf(r));
     const singles = list.filter((r) => r.noPair);
     const part = (title, rows) => (rows.length ? `<div class="sub">${title}</div>` + rows.join('') : '');
     return (pairs.length || none.length ? '' : '<div class="note">Every panel is checked</div>') +
-      part('Check these', pairs.map((p) => row(`${p.a.id}|${p.b.id}`, `${p.a.name} and ${p.b.name}`, `${Math.round(p.fit * 100)}%`, p.weak))) +
+      part('Check these', pairs.map((p) => row(`${p.a.id}|${p.b.id}`, [p.a.name, p.b.name], `${Math.round(p.fit * 100)}%`, p.weak))) +
       part('No match found', none.map((r) => row(r.id, r.name))) +
-      part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, `${r.name} and ${nameOf(r.mirror)}`))) +
+      part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, [r.name, nameOf(r.mirror)]))) +
       part('No pair', singles.map((r) => row(r.id, r.name)));
   }
   // the shared map library: browse and share for everyone; review for admins
