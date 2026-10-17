@@ -453,8 +453,9 @@ export function initTools(app, env) {
     const hit = layerAt(p);
     if (app.mode === 'finish') {
       const k = hit ? copyAt(hit, p) : -1, c = k > 0 && copyLook(hit.repeat, k).c; // a copy in one of the Repeat's other colours
-      env.finishPick(hit, p, c ? hit.repeat.colors[c - 1] : null); // what the finish will apply to
-      if (!hit || !hit.specOnly) return;    // and only an area can be dragged here
+      const more = e.shiftKey || e.ctrlKey || e.metaKey;
+      env.finishPick(hit, p, c ? hit.repeat.colors[c - 1] : null, more); // what the finish will apply to; Ctrl/Shift: as well
+      if (!hit || !hit.specOnly || more) return; // and only an area can be dragged here
     }
     const adding = e.shiftKey || e.ctrlKey || e.metaKey;
     if (!hit) {

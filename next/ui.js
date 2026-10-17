@@ -478,7 +478,7 @@ export function initUI(app, actions, version) {
     const t = app.ftarget;
     const rows = finishList(app.doc).map((f) => {
       const key = f.kind === 'colour' ? f.colour : f.id;
-      const on = t && t.kind === f.kind && (f.kind === 'colour' ? t.colour === f.colour : t.id === f.id);
+      const on = t && [t, ...app.fmore].some((x) => x.kind === f.kind && (f.kind === 'colour' ? x.colour === f.colour : x.id === f.id));
       const layer = f.kind === 'colour' ? null : app.doc.layers.find((l) => l.id === f.id);
       const sw = f.kind === 'colour' ? `background:${esc(f.colour)}` : f.kind === 'area' ? 'background:var(--accent-soft);border-style:dashed' : swatch(layer);
       const what = f.kind === 'colour' ? finishLabel(f.material, f.params) : `${esc(f.name)} · ${finishLabel(f.material, f.params)}`;
@@ -513,9 +513,10 @@ export function initUI(app, actions, version) {
     const layer = t.kind === 'colour' ? null : d.layers.find((l) => l.id === t.id);
     const now = actions.finishNow() || { material: 'gloss', params: null };
     const f = readFinish(now.material, now.params), preset = presetOf(f);
-    const label = t.kind === 'colour' ? `<span class="dot" style="background:${esc(t.colour)}"></span>Everything this colour` : t.kind === 'area' ? esc(layer ? layer.name : 'Area') : `Just ${esc(layer ? layer.name : 'this layer')}`;
+    const many = app.fmore.length + 1;
+    const label = many > 1 ? `${many} picked` : t.kind === 'colour' ? `<span class="dot" style="background:${esc(t.colour)}"></span>Everything this colour` : t.kind === 'area' ? esc(layer ? layer.name : 'Area') : `Just ${esc(layer ? layer.name : 'this layer')}`;
     // a shape or text can be finished with its whole colour, or by itself
-    const canScope = (t.kind === 'colour' && t.layerId) || (t.kind === 'layer' && layer && !layer.car && layerColour(layer));
+    const canScope = many === 1 && ((t.kind === 'colour' && t.layerId) || (t.kind === 'layer' && layer && !layer.car && layerColour(layer)));
     const scope = !canScope ? '' : `<div class="seg"><button data-scope="colour" aria-pressed="${t.kind === 'colour'}">All this colour</button><button data-scope="layer" aria-pressed="${t.kind === 'layer'}">Just this layer</button></div>`;
     // the finish of anything else in the livery, taken over whole: no numbers to match by eye
     const others = finishList(d).filter((o) => !(o.kind === t.kind && (o.kind === 'colour' ? o.colour === t.colour : o.id === t.id)));
@@ -529,7 +530,7 @@ export function initUI(app, actions, version) {
       `<div class="acts"><button class="btn" data-act="resetFinish" title="Put the three sliders back"${preset ? ' disabled' : ''}>Reset</button></div>` +
       `<label class="switch" title="Specks or chips that catch the light, over this finish">Sparkle<input id="fn-sparkle" type="checkbox"${f.sparkle ? ' checked' : ''}></label>` +
       (!f.sparkle ? '' : slider('fn-amount', 1, 60, f.sparkle.amount, 'Amount') + slider('fn-size', 1, 12, f.sparkle.size, 'Size') + slider('fn-strength', 0, 100, f.sparkle.strength, 'Strength') + slider('fn-bright', 0, 100, f.sparkle.bright, 'Brightness', 'Each fleck also lightens the paint under it, so it shows bright even when it has nothing to mirror')) +
-      (t.kind === 'area' && layer ? `<label class="switch" title="The same area on the twin panel too, or across the centreline">Mirrored<input id="f-mirrored" type="checkbox"${layer.mirrored ? ' checked' : ''}></label>` : '');
+      (t.kind === 'area' && layer && many === 1 ? `<label class="switch" title="The same area on the twin panel too, or across the centreline">Mirrored<input id="f-mirrored" type="checkbox"${layer.mirrored ? ' checked' : ''}></label>` : '');
   }
 
   // ---------- Map mode's two panels ----------
@@ -1143,7 +1144,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.act !== undefined) { closeMenus(); return run(t.dataset.act); }
     if (t.dataset.mode) return actions.setMode(t.dataset.mode);
     if (t.dataset.findef) { const [kind, key] = t.dataset.findef.split(/:(.*)/); return actions.finishDefault(kind, key); }
-    if (t.dataset.fin) { const [kind, key] = t.dataset.fin.split(/:(.*)/); return actions.finishSelect(kind, key); }
+    if (t.dataset.fin) { const [kind, key] = t.dataset.fin.split(/:(.*)/); return actions.finishSelect(kind, key, e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) && 'add'); }
     if (t.dataset.finish) return actions.setFinish(t.dataset.finish);
     if (t.dataset.scope) return actions.finishScope(t.dataset.scope);
     if (t.dataset.fade) return actions.setFade('style', t.dataset.fade);

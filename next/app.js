@@ -65,6 +65,7 @@ export const app = {
   // Finish mode: what the next finish applies to —
   // { kind: 'colour', colour, layerId? } | { kind: 'layer', id } | { kind: 'area', id }
   ftarget: null,
+  fmore: [],                          // more targets picked with Ctrl or Shift: a change to ftarget's finish goes on them too
   finishKind: 'matte',                // the finish a newly drawn area starts with
 };
 let ui = null, tools = null, mapTools = null, carGrad = null;
@@ -620,6 +621,23 @@ const flush = () => (saveTimer ? runSave() : Promise.resolve());
 
 // Every selected layer, back to front. `sels` only counts while it holds the
 // primary selection, so code that just sets app.sel never leaves a stale set.
+// Finish mode's pick. how: none = t alone; 'add' = t joins (and leads) or leaves;
+// 'range' = every row of the Finishes list from the lead to t
+const fkey = (t) => t.kind + ':' + (t.kind === 'colour' ? t.colour : t.id);
+function pickFinish(t, how) {
+  const lead = app.ftarget, list = finishList(app.doc);
+  const a = lead ? list.findIndex(f => fkey(f) === fkey(lead)) : -1, b = t ? list.findIndex(f => fkey(f) === fkey(t)) : -1;
+  if (how === 'range' && a !== -1 && b !== -1) {
+    app.fmore = list.slice(Math.min(a, b), Math.max(a, b) + 1).filter((_, i) => i + Math.min(a, b) !== a)
+      .map(f => f.kind === 'colour' ? { kind: 'colour', colour: f.colour } : { kind: f.kind, id: f.id });
+    return;
+  }
+  if (!how || !lead || !t) { app.ftarget = t; app.fmore = []; return; }
+  const all = [lead, ...app.fmore], i = all.findIndex(x => fkey(x) === fkey(t));
+  if (i === -1) all.unshift(t); else all.splice(i, 1);
+  app.ftarget = all[0] || null; app.fmore = all.slice(1);
+}
+
 function selectedLayers() {
   const ids = app.sels.length > 1 && app.sels.includes(app.sel) ? app.sels : app.sel && app.sel !== 'base' ? [app.sel] : [];
   return app.doc.layers.filter(l => ids.includes(l.id));
@@ -971,7 +989,7 @@ const actions = {
     tools.cancel(); mapTools.cancel(); carGrad.close();
     app.mode = mode;
     app.tool = mode === 'map' ? 'mpick' : 'select';
-    app.ftarget = null;
+    app.ftarget = null; app.fmore = [];
     if (mode !== 'finish' && isArea(actions.selected())) app.sel = null; // an area is Finish mode's to select
     app.trimming = false;
     app.centreFor = null;
@@ -993,13 +1011,16 @@ const actions = {
     if (t.kind === 'colour') { const r = ruleFor(app.doc, t.colour); return { material: r ? r.material : 'gloss', params: (r && r.params) || null }; }
     return l ? { material: l.material || 'gloss', params: l.matParams || null } : null;
   },
+  // on the target and everything picked with it: the same whole finish on each
   applyFinish({ material, params }) {
-    const t = app.ftarget, l = actions.finishLayer();
-    if (!t) return false;
-    if (t.kind === 'colour') setRule(app.doc, t.colour, material, params);
-    else if (l) { l.material = material; l.matParams = params; l.finishOwn = true; }
-    else return false;
-    return true;
+    if (!app.ftarget) return false;
+    let did = false;
+    for (const t of [app.ftarget, ...app.fmore]) {
+      const own = params && structuredClone(params), l = t.kind !== 'colour' && app.doc.layers.find(x => x.id === t.id);
+      if (t.kind === 'colour') { setRule(app.doc, t.colour, material, own); did = true; }
+      else if (l) { l.material = material; l.matParams = own; l.finishOwn = true; did = true; }
+    }
+    return did;
   },
   // one of the six: its three numbers, keeping whatever sparkle is on
   setFinish(key) {
@@ -1050,10 +1071,10 @@ const actions = {
     requestDraw();
     ui.refresh();
   },
-  // from the Finishes list
-  finishSelect(kind, key) {
-    if (kind === 'colour') { app.ftarget = { kind, colour: key }; app.sel = null; }
-    else { app.ftarget = { kind, id: key }; app.sel = key; }
+  // from the Finishes list. how: 'add' (Ctrl) | 'range' (Shift)
+  finishSelect(kind, key, how) {
+    pickFinish(kind === 'colour' ? { kind, colour: key } : { kind, id: key }, how);
+    app.sel = kind === 'colour' || app.fmore.length ? null : key;
     requestDraw();
     ui.refresh();
   },
@@ -1401,7 +1422,7 @@ const actions = {
   remove() {
     const gone = new Set(selectedLayers().map(l => l.id));
     if (!gone.size || !canChange()) return;
-    if (app.mode === 'finish') app.ftarget = null;
+    if (app.mode === 'finish') { app.ftarget = null; app.fmore = []; }
     app.doc.layers = app.doc.layers.filter(l => !gone.has(l.id));
     app.sel = null; app.sels = [];
     pruneGroups();
@@ -2338,30 +2359,31 @@ async function boot() {
       layer.finishOwn = true;
       layer.material = app.finishKind;
       layer.name = 'Area ' + (app.doc.layers.filter(isArea).length + 1);
-      app.ftarget = { kind: 'area', id: layer.id };
+      app.ftarget = { kind: 'area', id: layer.id }; app.fmore = [];
     },
     // Finish mode: a click on the sheet says what the finish applies to
-    finishPick(hit, p, colour = null) { // colour: a Repeat copy's own, when one was clicked
+    finishPick(hit, p, colour = null, adding = false) { // colour: a Repeat copy's own, when one was clicked
+      let t = null;
       if (!hit) {
         const inSheet = p.x >= 0 && p.y >= 0 && p.x <= SIZE && p.y <= SIZE;
-        app.ftarget = inSheet ? { kind: 'colour', colour: app.doc.baseColor.toLowerCase() } : null;
-        app.sel = null;
+        t = inSheet ? { kind: 'colour', colour: app.doc.baseColor.toLowerCase() } : null;
       } else {
         const c = colour || layerColour(hit);
-        app.sel = hit.id;
-        app.ftarget = isArea(hit) ? { kind: 'area', id: hit.id }
+        t = isArea(hit) ? { kind: 'area', id: hit.id }
           : c && !hasOwnFinish(hit) ? { kind: 'colour', colour: c, layerId: hit.id } // by colour is the quick way in
           : { kind: 'layer', id: hit.id };
       }
+      if (!(adding && !t)) pickFinish(t, adding && 'add'); // Ctrl or Shift on nothing changes nothing
+      app.sel = hit && !app.fmore.length ? hit.id : null;
       requestDraw();
       ui.refresh();
     },
     // which layers the target covers, for the outline on the sheet
     finishTargets() {
-      const t = app.ftarget;
-      if (!t) return () => false;
-      if (t.kind === 'colour') return (l) => !isArea(l) && !hasOwnFinish(l) && layerColours(l).includes(t.colour);
-      return (l) => l.id === t.id;
+      if (!app.ftarget) return () => false;
+      const ts = [app.ftarget, ...app.fmore];
+      const cols = ts.filter(t => t.kind === 'colour').map(t => t.colour), ids = ts.filter(t => t.kind !== 'colour').map(t => t.id);
+      return (l) => ids.includes(l.id) || (!isArea(l) && !hasOwnFinish(l) && layerColours(l).some(c => cols.includes(c)));
     },
     mirrorImage: (l) => (l.mirrored && app.doc.regionMap ? mirrorImage(app.doc.regionMap, l) : null),
   });
