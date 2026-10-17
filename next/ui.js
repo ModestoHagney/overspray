@@ -567,9 +567,9 @@ export function initUI(app, actions, version) {
     const singles = list.filter((r) => r.noPair);
     const part = (title, rows) => (rows.length ? `<div class="sub">${title}</div>` + rows.join('') : '');
     return (pairs.length || none.length ? '' : '<div class="note">Every panel is checked</div>') +
-      part('Check these', pairs.map((p) => row(`${p.a.id}|${p.b.id}`, `${p.a.name} and ${p.b.name}`, `${Math.round(p.fit * 100)}%`, p.weak))) +
+      part('Check these', pairs.map((p) => row(`${p.a.id}|${p.b.id}`, `${p.a.name} ⇄ ${p.b.name}`, `${Math.round(p.fit * 100)}%`, p.weak))) +
       part('No match found', none.map((r) => row(r.id, r.name))) +
-      part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, `${r.name} and ${nameOf(r.mirror)}`))) +
+      part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, `${r.name} ⇄ ${nameOf(r.mirror)}`))) +
       part('No pair', singles.map((r) => row(r.id, r.name)));
   }
   // the shared map library: browse and share for everyone; review for admins
