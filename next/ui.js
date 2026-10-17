@@ -2,7 +2,7 @@
 // the panel cards, dialogs, the right-click menu and the toast. It reads the
 // app state and calls back into `actions`; it holds no livery state itself.
 
-import { pieces, hue, pairList } from './map.js';
+import { pieces, hue, pairList, PAIR_COLOURS } from './map.js';
 import { SHAPES, PLAIN_SHAPES, roundedOf, plainOf, hollowOf, hollowed, softened, boxOutline, aspect, hasInner } from '../js/shapes.js';
 import { TEXT_FONTS, GOOGLE_FONTS, fadeStyleOf, carStops } from '../js/engine.js';
 import { FINISHES, finishName, finishLabel, finishList, layerColour, isArea, readFinish, presetOf } from '../js/finish.js';
@@ -553,7 +553,7 @@ export function initUI(app, actions, version) {
       const [a, b] = o.ids.map((id) => list.find((r) => r.id === id)), together = a && b && a.mirror === b.id;
       if (!a) return '';
       const btn = (act, label, title = '') => `<button class="btn" data-act="${act}"${title ? ` title="${title}"` : ''}>${label}</button>`;
-      return '<div class="pairbox">' + [a, b].filter(Boolean).map((r) => `<input class="pname" type="text" data-rname="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name of ${esc(r.name)}">`).join('') +
+      return '<div class="pairbox">' + [a, b].filter(Boolean).map((r, i) => `<label class="pname"><span class="sw" style="background:${PAIR_COLOURS[i]}"></span><input type="text" data-rname="${esc(r.id)}" value="${esc(r.name)}" aria-label="Name of the ${i ? 'blue' : 'pink'} panel"></label>`).join('') +
         '<div class="acts">' + (together ? btn('pairUnpair', 'Unpair')
           : a.noPair ? btn('pairHasPair', 'Has a pair', 'Puts it back in the list to pair')
           : (b ? btn('pairConfirm', 'Confirm', 'These two are twins') : '') + btn('pairNone', 'No pair', b ? 'Neither of these has a twin' : 'It has no twin')) + '</div>' +
