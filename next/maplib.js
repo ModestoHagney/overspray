@@ -60,7 +60,9 @@ export async function openReviews(key) {
   for (const pr of prs) {
     const files = (await gh(`/pulls/${pr.number}/files`, key)) || [];
     const f = files.find(x => /^cars\/[^/]+\.json$/.test(x.filename) && x.status !== 'removed');
-    if (f) out.push({ number: pr.number, title: pr.title, by: pr.user.login, file: f.filename, url: f.raw_url });
+    // raw_url goes by way of github.com, which a page can't read from: the
+    // file straight from raw.githubusercontent.com, at the pull request's head
+    if (f && pr.head.repo) out.push({ number: pr.number, title: pr.title, by: pr.user.login, file: f.filename, url: `https://raw.githubusercontent.com/${pr.head.repo.full_name}/${pr.head.sha}/${f.filename}` });
   }
   return out;
 }
