@@ -67,7 +67,7 @@ export function initCarGradient(app, env) {
       '<div class="cg-lines">' + lines().map((cl, k) => {
         const lo = Math.min(cl.a, cl.b), hi = Math.max(cl.a, cl.b), on = picked.some((id) => cl.regions.includes(id));
         return `<div class="cg-line${on ? ' on' : ''}${k === fresh ? ' cue' : ''}" data-line="${k}" style="--c:${esc(cl.color || 'var(--accent)')}">` +
-          `<div class="cg-track" title="${esc(names(cl.regions))}. Drag to move, drag an end to stretch. Click it to add the picked panels."><span class="cg-bar${cl.b < cl.a ? ' back' : ''}" style="left:${lo * 100}%;width:${(hi - lo) * 100}%"><i data-lend="${cl.a <= cl.b ? 'a' : 'b'}"></i><i data-lend="${cl.a <= cl.b ? 'b' : 'a'}"></i></span></div>` +
+          `<div class="cg-track" title="${esc(names(cl.regions))}. Drag to move, drag an end to stretch. Click it to add the picked panels."><span class="cg-bar" style="left:${lo * 100}%;width:${(hi - lo) * 100}%"><i data-lend="${cl.a <= cl.b ? 'a' : 'b'}"></i><i data-lend="${cl.a <= cl.b ? 'b' : 'a'}"></i></span></div>` +
           `<button class="icon" data-lineout="${k}" title="Take ${esc(names(cl.regions))} off" aria-label="Take ${esc(names(cl.regions))} off">${X}</button></div>`;
       }).join('') + '</div>' +
       `<div class="cg-acts"><button class="btn" data-cg="add"${bl.length >= 12 ? ' disabled' : ''}>Add a colour</button>` +
@@ -151,7 +151,7 @@ export function initCarGradient(app, env) {
   }
   function showBar(k, cl) {
     const lo = Math.min(cl.a, cl.b), hi = Math.max(cl.a, cl.b), bar = el.querySelector(`[data-line="${k}"] .cg-bar`);
-    bar.style.left = lo * 100 + '%'; bar.style.width = (hi - lo) * 100 + '%'; bar.classList.toggle('back', cl.b < cl.a);
+    bar.style.left = lo * 100 + '%'; bar.style.width = (hi - lo) * 100 + '%';
   }
   el.addEventListener('pointerdown', (e) => {
     const t = e.target;
@@ -339,7 +339,7 @@ export function initCarGradient(app, env) {
       const A = docToScreen(L.from.x, L.from.y), B = docToScreen(L.to.x, L.to.y), t = Math.atan2(B.y - A.y, B.x - A.x);
       ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
       for (const k of [-1, 1]) { ctx.moveTo(B.x, B.y); ctx.lineTo(B.x - 12 * Math.cos(t + k * 0.45), B.y - 12 * Math.sin(t + k * 0.45)); }
-      ctx.lineCap = 'round'; ctx.strokeStyle = '#101114'; ctx.lineWidth = w + 2.5; ctx.stroke(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke(); ctx.lineCap = 'butt';
+      ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.lineWidth = w + 1; ctx.stroke(); ctx.lineCap = 'butt'; // one solid colour, like its bar
     };
     const ls = lines(), m = map(), all = carLinesWithTwins(m), twins = all.slice(ls.length);
     // a paired panel following its twin's line: dashed, as it is set from the other side
