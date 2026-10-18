@@ -73,11 +73,13 @@ test('a repeat keeps its settings through save and load, cleaned; an old pattern
   assert.equal(back.layers[1].repeat, undefined);
 });
 
-test('pit box swatches keep their place and colour through save and load, cleaned', async () => {
+test('extra colour squares keep their name, place and colour through save and load, cleaned; an older save\'s pitbox loads too', async () => {
   const doc = createDoc();
-  doc.pitbox = [{ x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: 'gone' }, { x: 9999, y: -5, w: 27, h: 24, color: '#03ff32', ref: null }, { x: 0, y: 0, w: 1, h: 1, color: 'red' }];
+  doc.swatches = [{ name: 'Cockpit', x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: 'gone' }, { name: 'Pit box', x: 9999, y: -5, w: 27, h: 24, color: '#03ff32', ref: null }, { x: 0, y: 0, w: 1, h: 1, color: 'red' }];
   const back = await deserializeDoc(JSON.parse(JSON.stringify(serializeDoc(doc))));
-  assert.deepEqual(back.pitbox, [{ x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: null }, { x: 2048, y: 0, w: 27, h: 24, color: '#03ff32', ref: null }]);
+  assert.deepEqual(back.swatches, [{ name: 'Cockpit', x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: null }, { name: 'Pit box', x: 2048, y: 0, w: 27, h: 24, color: '#03ff32', ref: null }]);
+  const old = await deserializeDoc({ pitbox: [{ x: 1, y: 2, w: 3, h: 4, color: '#ff0000' }, { x: 5, y: 2, w: 3, h: 4, color: '#00ff00' }] });
+  assert.deepEqual(old.swatches.map(p => p.name), ['Pit box 1', 'Pit box 2']);
 });
 
 test('createFillLayer initializes colorMid/midPos and serializeDoc keeps them', () => {

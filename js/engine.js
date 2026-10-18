@@ -138,7 +138,7 @@ export function createDoc() {
     regionMap: null,            // parsed overspray-regions/1 map (see regions.js)
     palette: [],                // the livery's saved colours { id, name, color }; a layer's colorRef (or baseRef) points at one
     baseRef: null,              // palette id the base coat follows, if any
-    pitbox: [],                 // the pit box colour swatches from the template: { x, y, w, h, color, ref } (ref: palette id it follows)
+    swatches: [],               // the car's extra colours (pit box, cockpit) as squares from the template: { name, x, y, w, h, color, ref } (ref: palette id it follows)
   };
 }
 
@@ -832,9 +832,9 @@ function inPaintMap(layer) {
   return layer.visible && !layer.specOnly;
 }
 
-// the pit box swatches go over everything, so iRacing reads the colours set for them
-function paintPitbox(ctx, doc) {
-  for (const p of doc.pitbox || []) { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.w, p.h); }
+// the extra colours' squares go over everything, so iRacing reads the colours set for them
+function paintSwatches(ctx, doc) {
+  for (const p of doc.swatches || []) { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.w, p.h); }
 }
 
 function paintBase(ctx, doc) {
@@ -976,7 +976,7 @@ export function renderPaint(doc, { linearEdges: lin = false } = {}) {
       if (inPaintMap(layer)) paintLayerInto(ctx, layer);
     }
   } finally { linearEdges = false; }
-  paintPitbox(ctx, doc);
+  paintSwatches(ctx, doc);
   return paintCanvas;
 }
 
@@ -1016,7 +1016,7 @@ export function buildDragCache(doc, movingIds) {
     if (doc.layers[i].blend) return null; // a blend above needs what is under it: no shortcut
     if (inPaintMap(doc.layers[i])) paintLayerInto(actx, doc.layers[i]);
   }
-  paintPitbox(actx, doc);
+  paintSwatches(actx, doc);
   return { movingIds };
 }
 
@@ -1139,7 +1139,7 @@ export function serializeDoc(doc) {
     regionMap: doc.regionMap || null,
     palette: cleanPalette(doc.palette),
     baseRef: doc.baseRef || null,
-    pitbox: doc.pitbox || [],
+    swatches: doc.swatches || [],
     googleFonts: (doc.googleFonts || []).filter(f => typeof f === 'string' && f).slice(0, 60),
     finishRules: cleanFinishRules(doc.finishRules),
     groups: (doc.groups || []).map(g => ({ id: g.id, name: g.name, collapsed: !!g.collapsed, ...(g.turn ? { turn: g.turn } : {}) })),
@@ -1310,9 +1310,10 @@ export async function deserializeDoc(data) {
   doc.googleFonts = Array.isArray(data.googleFonts) ? data.googleFonts.filter(f => typeof f === 'string' && f).slice(0, 60) : [];
   doc.baseRef = doc.palette.some(c => c.id === data.baseRef) ? data.baseRef : null;
   const n = (v) => Math.max(0, Math.min(SIZE, Math.round(+v) || 0));
-  doc.pitbox = (Array.isArray(data.pitbox) ? data.pitbox : []).slice(0, 8)
+  const sw = data.swatches || data.pitbox; // (saved as pitbox before the cockpit colour came)
+  doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 8)
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
-    .map(p => ({ x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null }));
+    .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null }));
   // custom fonts must be live before text layers regenerate below
   doc.fontWarnings = [];
   for (const f of (data.customFonts || [])) {

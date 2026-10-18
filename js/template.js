@@ -86,12 +86,12 @@ const fileToDataURL = (file) => new Promise((resolve, reject) => {
 // picture (linework only). map: the doc's current region map, or null.
 // fit: how well the map already there matches this template's panels (see
 // mapFit), or null when there was nothing to compare
-// → { template: { img, src }, regionMap, pieces, zones, carName, fit, pitbox }
+// → { template: { img, src }, regionMap, pieces, zones, carName, fit, swatches }
 export async function loadTemplate(file, map = null) {
   const carName = file.name.replace(/\.[^.]+$/, '');
   if (!/\.psd$/i.test(file.name)) {
     const src = await fileToDataURL(file);
-    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null, pitbox: [] };
+    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null, swatches: [] };
   }
   await ensurePsdReader();
   const res = await psdToTemplate(await file.arrayBuffer());
@@ -104,6 +104,6 @@ export async function loadTemplate(file, map = null) {
   const src = res.wire ? linesPicture(res.wire) : res.src;
   return {
     template: { img: await loadImage(src), src },
-    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName, fit, pitbox: res.pitbox || [],
+    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName, fit, swatches: res.swatches || [],
   };
 }
