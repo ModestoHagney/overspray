@@ -906,7 +906,7 @@ const actions = {
       d.regionMap = t.regionMap;
       // the template's extra colours; ones already set keep their colours
       app.board = null;
-      d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref, ...(had.off ? { off: true } : {}) } : { ...p, ref: null }; });
+      d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref } : { ...p, ref: null }; });
       if (!fixedSel() && !d.layers.some(l => l.id === app.sel)) app.sel = 'base';
       if (!d.name || d.name === 'untitled livery') d.name = t.carName;
       fit();
@@ -1274,13 +1274,6 @@ const actions = {
   openExtras() {
     if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, cockpit or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
     actions.select(swatchAt(app.sel) ? app.sel : 'sw0');
-  },
-  // a Car extras square (or the pitboard's background) painted, or left to the layers under it
-  swatchOn(on) {
-    const p = swatchAt(app.sel);
-    if (!p) return;
-    if (on) delete p.off; else p.off = true;
-    change({ now: true });
   },
   addCarGradient() {
     if (app.mode !== 'paint') actions.setMode('paint');
