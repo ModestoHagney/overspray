@@ -156,6 +156,20 @@ function extractSwatches(entries, w, h) {
       out.push({ name: found.length > 1 ? `${name} ${k + 1}` : name, x: Math.round(r.x * kx), y: Math.round(r.y * ky), w: Math.round(r.w * kx), h: Math.round(r.h * ky), color: '#' + hex(d[i]) + hex(d[i + 1]) + hex(d[i + 2]) });
     });
   }
+  // the pitboard (oval cars and some others): an area on a "Pitboard" layer
+  // where the board's picture goes; its outline, with a colour of its own
+  const boards = entries.filter(e => /pit\s*board/i.test(e.layer.name || '')).map(e => e.layer);
+  if (boards.length) {
+    const px = composeLayers(boards, w, h).getContext('2d').getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
+    const [pts] = detectPieces(mask, w, h);
+    if (pts) {
+      const points = pts.map(q => ({ x: Math.round(q.x * kx), y: Math.round(q.y * ky) }));
+      const xs = points.map(q => q.x), ys = points.map(q => q.y), x = Math.min(...xs), y = Math.min(...ys);
+      out.push({ name: 'Pitboard', x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, points, color: '#ffffff' });
+    }
+  }
   return out;
 }
 
@@ -170,7 +184,7 @@ function extractDecals(entries, w, h) {
 //   pieces    — outlines of the sheet's pieces from the wireframe ([] when there are none)
 //   zones     — [{ kind: 'sponsor'|'number', x, y, w, h }] ([] when the kit has no block layers)
 //   decals    — RGBA canvas of the stock decals, for orientation probing (null if none)
-//   swatches  — [{ name, x, y, w, h, color }]: the car's extra colour squares ([] when the kit has none)
+//   swatches  — [{ name, x, y, w, h, color, points? }]: the car's extra colour squares, and the pitboard by its outline ([] when the kit has none)
 export async function psdToTemplate(arrayBuffer) {
   const agPsd = await loadAgPsd();
   const psd = agPsd.readPsd(arrayBuffer);

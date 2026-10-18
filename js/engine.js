@@ -832,9 +832,17 @@ function inPaintMap(layer) {
   return layer.visible && !layer.specOnly;
 }
 
-// the extra colours' squares go over everything, so iRacing reads the colours set for them
-function paintSwatches(ctx, doc) {
-  for (const p of doc.swatches || []) { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.w, p.h); }
+// the extra colours' squares go over everything, so iRacing reads the colours
+// set for them; the pitboard's colour goes under the layers, as its background
+function paintSwatches(ctx, doc, boards = false) {
+  for (const p of doc.swatches || []) {
+    if (!!p.points !== boards) continue;
+    ctx.fillStyle = p.color;
+    if (!boards) { ctx.fillRect(p.x, p.y, p.w, p.h); continue; }
+    ctx.beginPath();
+    p.points.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.fill();
+  }
 }
 
 function paintBase(ctx, doc) {
@@ -970,6 +978,7 @@ export function renderPaint(doc, { linearEdges: lin = false } = {}) {
   const ctx = paintCanvas.getContext('2d');
   ctx.clearRect(0, 0, SIZE, SIZE);
   paintBase(ctx, doc);
+  paintSwatches(ctx, doc, true);
   linearEdges = lin;
   try {
     for (const layer of doc.layers) {
@@ -1007,6 +1016,7 @@ export function buildDragCache(doc, movingIds) {
   const bctx = dragBelow.getContext('2d');
   bctx.clearRect(0, 0, SIZE, SIZE);
   paintBase(bctx, doc);
+  paintSwatches(bctx, doc, true);
   for (let i = 0; i < lo; i++) {
     if (inPaintMap(doc.layers[i])) paintLayerInto(bctx, doc.layers[i]);
   }
@@ -1313,7 +1323,8 @@ export async function deserializeDoc(data) {
   const sw = data.swatches || data.pitbox; // (saved as pitbox before the cockpit colour came)
   doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 8)
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
-    .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null }));
+    .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null,
+      ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })) } : {}) }));
   // custom fonts must be live before text layers regenerate below
   doc.fontWarnings = [];
   for (const f of (data.customFonts || [])) {

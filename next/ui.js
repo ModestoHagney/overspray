@@ -98,7 +98,7 @@ const TOOLS = [
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
   ['cargrad', 'New car gradient'],
-  ['extras', 'Car extras: pit box and cockpit colours'],
+  ['extras', 'Car extras: pit box, cockpit and pitboard'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
 const FINISH_TOOLS = [
@@ -389,11 +389,12 @@ export function initUI(app, actions, version) {
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
-    if (actions.swatchAt(app.sel)) { // Car extras: the pit box and cockpit colours, one at a time
-      const all = app.doc.swatches;
+    if (actions.swatchAt(app.sel)) { // Car extras: the pit box, cockpit and pitboard colours, one at a time
+      const all = app.doc.swatches, board = !!actions.swatchAt(app.sel).points;
       return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
         (all.length < 2 ? '' : `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`) +
-        '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there comes out as stripes.</div>';
+        (board ? '<div class="note">The board\'s background. Anything you add now (a logo, text, a shape) stays inside the board.</div>'
+          : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there comes out as stripes.</div>');
     }
     const many = actions.selectedLayers();
     if (many.length > 1) { // several: what can be done to them together
