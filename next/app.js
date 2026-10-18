@@ -24,7 +24,7 @@ import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasA
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage } from '../js/trace.js';
-import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE } from '../js/finish.js';
+import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
@@ -457,6 +457,7 @@ function onBoard() {
 }
 function change({ panels = true, now = false } = {}) {
   skipCapture = false; // a real edit after an undo is recorded
+  oneSparkle(app.doc); // a layer pasted or brought in with another sparkle takes the livery's
   clearTimeout(quickTimer);
   quick = !panels && !now; // a drag, a slider, a nudge: more of the same is coming
   if (quick) quickTimer = setTimeout(settle, 160);
@@ -647,6 +648,7 @@ async function setDoc(doc, projectId) {
   app.piece = app.centreFor = null;
   app.trimming = false;
   app.doc = doc;
+  oneSparkle(doc); // an older livery could have a different sparkle on each layer: they all take the first one's
   app.projectId = projectId;
   app.sel = 'base';
   lastJson = null;
@@ -1100,11 +1102,13 @@ const actions = {
     const now = actions.finishNow();
     if (!now) return;
     const f = readFinish(now.material, now.params);
-    if (part === 'sparkle') f.sparkle = value ? { ...SPARKLE } : null;
-    else if (part === 'amount' || part === 'size' || part === 'strength' || part === 'bright') { if (!f.sparkle) return; f.sparkle[part] = value; }
+    const all = part === 'amount' || part === 'size' || part === 'strength' || part === 'bright';
+    if (part === 'sparkle') f.sparkle = value ? { ...(liverySparkle(app.doc) || SPARKLE) } : null; // switched on: the livery's sparkle
+    else if (all) { if (!f.sparkle) return; f.sparkle[part] = value; }
     else f[part] = value;
     // it keeps the name of the finish it started from while its numbers are moved
     if (!actions.applyFinish(writeFinish(f, presetOf(readFinish(now.material, now.params)) || now.material))) return;
+    if (all) oneSparkle(app.doc, f.sparkle); // one sparkle for the whole livery: every sparkly finish moves with it
     change(part === 'sparkle' ? { now: true } : { panels: false });
   },
   // the finish something else in the livery has, taken over whole. from: 'colour:#rrggbb' | 'layer:id' | 'area:id'
@@ -2620,6 +2624,7 @@ async function boot() {
     const json = await persist.loadBlob('next-autosave');
     if (json) {
       app.doc = await deserializeDoc(JSON.parse(json));
+      oneSparkle(app.doc);
       app.projectId = (await persist.loadSetting('next-project').catch(() => null)) || null;
       lastJson = json;
     }

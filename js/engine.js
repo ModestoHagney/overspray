@@ -49,73 +49,93 @@ function mulberry32(seed) {
 }
 
 const clamp255 = (v) => Math.max(0, Math.min(255, v));
-const texCache = new Map();
-
-export function specTexture(key, p) {
-  const cacheKey = `${key}|${p.met}|${p.rough}|${p.clear}|${p.scale || 0}|${p.density || 0}|${p.contrast || 0}`;
-  const had = texCache.get(cacheKey);
-  if (had) { texCache.delete(cacheKey); texCache.set(cacheKey, had); return had; } // used again: it moves to the newest end
-  // each is two full sheets (32 MB): the last 3 kept, enough for a base and two sparkle layers without remaking them every redraw
-  if (texCache.size >= 3) texCache.delete(texCache.keys().next().value);
-
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  const ctx = c.getContext('2d');
-  const id = ctx.createImageData(SIZE, SIZE);
-  const d = id.data;
+// Sparkle is one pattern for the whole livery (finish.js oneSparkle): each
+// pixel says how far a fleck there pushes the finish under it toward full
+// metal (a), how much it cuts the roughness (b) and adds back (n). Kept apart
+// from the finish's own three numbers, the one pattern serves every finish it
+// lies over: 12 MB, made again only when the sparkle itself changes.
+let sparkle = null; // { key, a, b, n, light }
+// coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
+// spikes metallic and carries its OWN roughness, so different chips
+// catch the light at different angles — the tumbling-glitter look.
+// each(x, y, side, flash, roughness added), in the order they are laid
+function glitterChips(p, each) {
   const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
   const k = (p.contrast ?? 100) / 100;
-  // Sparkle also comes as `canvas.light`: the same flecks in white, each as
-  // see-through as it is weak. Laid over the paint (see sparkleLight) it
-  // lightens the colour under every fleck, so a fleck reads bright even with
-  // nothing to mirror. A fleck of full mirror metal with nothing bright to
-  // reflect is otherwise a dark speck.
-  const light = key === 'flake' || key === 'glitter' ? document.createElement('canvas') : null;
-  if (light) { light.width = light.height = SIZE; c.light = light; }
-
-  if (key === 'flake') {
+  const size = Math.max(2, Math.round(p.scale ?? 4));
+  const density = Math.max(1, Math.min(80, p.density ?? 30));
+  const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
+  for (let c = 0; c < count; c++) {
+    const x = Math.floor(rand() * SIZE);
+    const y = Math.floor(rand() * SIZE);
+    const flash = rand() * k;                       // how hard this chip flashes
+    const n = Math.round(rand() * 30);
+    each(x, y, Math.max(1, Math.round(size * (0.7 + rand() * 0.6))), flash, n);
+  }
+}
+function sparklePattern(kind, p) {
+  const key = `${kind}|${p.scale || 0}|${p.density || 0}|${p.contrast ?? 100}`;
+  if (sparkle && sparkle.key === key) return sparkle;
+  sparkle = null; // the old one goes before the new one is made
+  const N = SIZE * SIZE, a = new Uint8Array(N), b = new Uint8Array(N).fill(255), n = new Uint8Array(N);
+  if (kind === 'flake') {
+    const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
+    const k = (p.contrast ?? 100) / 100;
     // sparkle speckle: random pixels spike metallic and drop roughness
     const density = Math.max(0.01, (p.density ?? 18) / 100);
     const thr = 1 - density;
-    const lid = light.getContext('2d').createImageData(SIZE, SIZE), ld = lid.data;
-    for (let i = 0; i < d.length; i += 4) {
+    for (let i = 0; i < N; i++) {
       const f = rand();
       const s = (f > thr ? (f - thr) / density : 0) * k;
-      d[i]     = clamp255(p.met + (255 - p.met) * s);
-      d[i + 1] = clamp255(p.rough * (1 - 0.85 * s));
-      d[i + 2] = p.clear;
-      d[i + 3] = 255;
-      ld[i] = ld[i + 1] = ld[i + 2] = 255;
-      ld[i + 3] = clamp255(255 * s);
+      a[i] = Math.round(255 * s);
+      b[i] = Math.round(255 * (1 - 0.85 * s));
     }
-    light.getContext('2d').putImageData(lid, 0, 0);
-  } else if (key === 'glitter') {
-    // coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
-    // spikes metallic and carries its OWN roughness, so different chips
-    // catch the light at different angles — the tumbling-glitter look.
-    ctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-    const size = Math.max(2, Math.round(p.scale ?? 4));
-    const density = Math.max(1, Math.min(80, p.density ?? 30));
-    const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
-    const lctx = light.getContext('2d');
-    for (let i = 0; i < count; i++) {
-      const x = Math.floor(rand() * SIZE);
-      const y = Math.floor(rand() * SIZE);
-      const flash = rand() * k;                       // how hard this chip flashes
-      const met = clamp255(p.met + (255 - p.met) * (0.4 + 0.6 * flash));
-      const rough = clamp255(p.rough * (1 - 0.9 * flash) + rand() * 30);
-      const s = Math.max(1, Math.round(size * (0.7 + rand() * 0.6)));
-      ctx.fillStyle = `rgb(${met},${rough},${p.clear})`;
-      ctx.fillRect(x, y, s, s);
-      lctx.fillStyle = `rgba(255,255,255,${(0.4 + 0.6 * flash).toFixed(3)})`;
-      lctx.fillRect(x, y, s, s);
-    }
-    texCache.set(cacheKey, c);
-    return c; // drawn with fillRect — skip the ImageData path below
+  } else {
+    glitterChips(p, (x, y, s, flash, cn) => {
+      const ca = Math.round(255 * (0.4 + 0.6 * flash)), cb = Math.round(255 * (1 - 0.9 * flash));
+      for (let yy = y; yy < Math.min(SIZE, y + s); yy++) for (let xx = x; xx < Math.min(SIZE, x + s); xx++) {
+        const i = yy * SIZE + xx; a[i] = ca; b[i] = cb; n[i] = cn;
+      }
+    });
   }
-  ctx.putImageData(id, 0, 0);
-  texCache.set(cacheKey, c);
+  sparkle = { key, a, b, n, light: null };
+  return sparkle;
+}
+// The sparkle over a finish of these three numbers, written into the pixels of
+// ctx's box (x, y, w, h: sheet coordinates from ctx's own 0, 0) that are not
+// see-through; those keep their alpha.
+export function paintSparkle(ctx, kind, p, x, y, w, h) {
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.min(SIZE, Math.ceil(x + w), ctx.canvas.width) - x; h = Math.min(SIZE, Math.ceil(y + h), ctx.canvas.height) - y;
+  if (w <= 0 || h <= 0) return;
+  const { a, b, n } = sparklePattern(kind, p), img = ctx.getImageData(x, y, w, h), d = img.data;
+  for (let j = 0; j < h; j++) for (let i = 0, o = (j * w) * 4, q = (y + j) * SIZE + x; i < w; i++, o += 4, q++) {
+    if (!d[o + 3]) continue;
+    d[o] = p.met + (255 - p.met) * a[q] / 255;
+    d[o + 1] = clamp255(p.rough * b[q] / 255 + n[q]);
+    d[o + 2] = p.clear;
+  }
+  ctx.putImageData(img, x, y);
+}
+// The same flecks in white, each as see-through as it is weak. Laid over the
+// paint (see sparkleLight) it lightens the colour under every fleck, so a
+// fleck reads bright even with nothing to mirror. A fleck of full mirror
+// metal with nothing bright to reflect is otherwise a dark speck. Made only
+// for a sparkle with Brightness.
+export function sparkleLightCanvas(kind, p) {
+  const pat = sparklePattern(kind, p);
+  if (pat.light) return pat.light;
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const g = c.getContext('2d');
+  if (kind === 'glitter') { // chips laid one over another, as the light of two overlapping chips adds up
+    glitterChips(p, (x, y, s, flash) => { g.fillStyle = `rgba(255,255,255,${(0.4 + 0.6 * flash).toFixed(3)})`; g.fillRect(x, y, s, s); });
+  } else {
+    const img = g.createImageData(SIZE, SIZE), d = img.data;
+    for (let q = 0, o = 0; q < pat.a.length; q++, o += 4) { d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = pat.a[q]; }
+    g.putImageData(img, 0, 0);
+  }
+  pat.light = c;
   return c;
 }
 
@@ -861,7 +881,7 @@ function sparkleLight(material, params) {
   const mat = MATERIALS[material];
   if (!mat || (mat.tex !== 'flake' && mat.tex !== 'glitter')) return null;
   const p = resolveParams(material, params), amount = Math.max(0, Math.min(1, (p.bright || 0) / 100));
-  return amount ? { canvas: specTexture(mat.tex, p).light, amount } : null;
+  return amount ? { canvas: sparkleLightCanvas(mat.tex, p), amount } : null;
 }
 let lightScratch = null; // made when first needed: most liveries never do
 
@@ -1064,12 +1084,9 @@ export function renderSpec(doc) {
   const base = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
   const baseP = resolveParams(doc.baseMaterial, doc.baseMatParams);
   ctx.clearRect(0, 0, SIZE, SIZE);
-  if (base.tex) {
-    ctx.drawImage(specTexture(base.tex, baseP), 0, 0);
-  } else {
-    ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-  }
+  ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (base.tex) paintSparkle(ctx, base.tex, baseP, 0, 0, SIZE, SIZE);
 
   // Layers are stamped in runs: neighbours in the stack that carry the very
   // same finish go down as one silhouette, filled once. A livery of many
@@ -1102,13 +1119,10 @@ export function renderSpec(doc) {
     sctx.globalCompositeOperation = 'source-in';
     // only inside the box: outside it there is nothing of this run to fill
     sctx.beginPath(); sctx.rect(x0, y0, w, h); sctx.clip();
-    if (mat.tex) {
-      sctx.drawImage(specTexture(mat.tex, p), 0, 0);
-    } else {
-      sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-      sctx.fillRect(x0, y0, w, h);
-    }
+    sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+    sctx.fillRect(x0, y0, w, h);
     sctx.restore();
+    if (mat.tex) paintSparkle(sctx, mat.tex, p, x0, y0, w, h);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
     sctx.clearRect(x0, y0, w, h); // left clean for the next run
   }

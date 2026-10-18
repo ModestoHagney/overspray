@@ -8,7 +8,7 @@
 // The shading is the original screen's shader ball, on a different shape, plus
 // a soft horizon for metal to mirror.
 
-import { MATERIALS, specTexture, resolveParams } from '../js/engine.js';
+import { MATERIALS, paintSparkle, sparkleLightCanvas, resolveParams } from '../js/engine.js';
 import { hexToRgb } from './picker.js';
 
 const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
@@ -26,13 +26,9 @@ export function renderTile(canvas, material, params, colour) {
   const sc = document.createElement('canvas');
   sc.width = W; sc.height = Ht;
   const sctx = sc.getContext('2d', { willReadFrequently: true });
-  if (MATERIALS[key].tex) {
-    sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(specTexture(MATERIALS[key].tex, p), 0, 0, W, Ht, 0, 0, W, Ht); // a 1:1 crop: the grain at its real size
-  } else {
-    sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-    sctx.fillRect(0, 0, W, Ht);
-  }
+  sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+  sctx.fillRect(0, 0, W, Ht);
+  if (MATERIALS[key].tex) paintSparkle(sctx, MATERIALS[key].tex, p, 0, 0, W, Ht); // a 1:1 crop: the grain at its real size
   const spec = sctx.getImageData(0, 0, W, Ht).data;
   const rgb = (c) => hexToRgb(c).map(v => v / 255);
   // the paint colour of each column of the tile
@@ -46,9 +42,9 @@ export function renderTile(canvas, material, params, colour) {
   });
   // Sparkle with Brightness: each fleck lightens the paint under it by this much (0 to 1), per pixel
   let lit = null;
-  if (MATERIALS[key].tex && p.bright > 0 && specTexture(MATERIALS[key].tex, p).light) {
+  if (MATERIALS[key].tex && p.bright > 0) {
     sctx.clearRect(0, 0, W, Ht);
-    sctx.drawImage(specTexture(MATERIALS[key].tex, p).light, 0, 0, W, Ht, 0, 0, W, Ht);
+    sctx.drawImage(sparkleLightCanvas(MATERIALS[key].tex, p), 0, 0, W, Ht, 0, 0, W, Ht);
     lit = sctx.getImageData(0, 0, W, Ht).data;
   }
   const out = ctx.createImageData(W, Ht), d = out.data;
