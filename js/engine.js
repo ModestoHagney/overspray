@@ -836,7 +836,7 @@ function inPaintMap(layer) {
 // set for them; the pitboard's colour goes under the layers, as its background
 function paintSwatches(ctx, doc, boards = false) {
   for (const p of doc.swatches || []) {
-    if (!!p.points !== boards) continue;
+    if (!!p.points !== boards || p.off) continue;
     ctx.fillStyle = p.color;
     if (!boards) { ctx.fillRect(p.x, p.y, p.w, p.h); continue; }
     ctx.beginPath();
@@ -1323,7 +1323,7 @@ export async function deserializeDoc(data) {
   const sw = data.swatches || data.pitbox; // (saved as pitbox before the cockpit colour came)
   doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 8)
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
-    .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null,
+    .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null, ...(p.off ? { off: true } : {}),
       ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })) } : {}) }));
   // custom fonts must be live before text layers regenerate below
   doc.fontWarnings = [];
