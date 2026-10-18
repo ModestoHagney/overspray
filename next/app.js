@@ -94,23 +94,45 @@ const luminance = (hex) => {
 // the doc (the original screen's per-project opacity suited its dark canvas)
 // The template's lines for the screen, as two pictures in a tone that reads
 // against the base coat: the panel lines (strong ink in the template picture,
-// thickened a little) and the mesh (faint ink; see js/template.js). Rebuilt
-// only when the template or the tone changes.
-let lineCache = { img: null, dark: null, borders: null, mesh: null };
+// thickened a little) and the mesh (faint ink; see js/template.js). Each is
+// made only while it is switched on, and the template picture is let go once
+// they are made (16 MB decoded): it is decoded again only to make one that was
+// off. A new tone recolours them in place.
+let lineCache = { src: null, dark: null, borders: null, mesh: null };
+let lineLoad = null; // the template being decoded for them
 function templateLines(doc) {
-  const img = doc.template.img, dark = luminance(doc.baseColor) > 0.5;
-  if (lineCache.img === img && lineCache.dark === dark) return lineCache;
-  const w = img.width, h = img.height;
+  const t = doc.template, dark = luminance(doc.baseColor) > 0.5, tone = dark ? '#101114' : '#ffffff';
+  if (lineCache.src !== t.src) lineCache = { src: t.src, dark, borders: null, mesh: null };
+  if (!app.show.lines) lineCache.borders = null;
+  if (!app.show.mesh) lineCache.mesh = null;
+  if (lineCache.dark !== dark) {
+    for (const c of [lineCache.borders, lineCache.mesh]) {
+      if (!c) continue;
+      const g = c.getContext('2d');
+      g.globalCompositeOperation = 'source-in'; g.fillStyle = tone; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'source-over';
+    }
+    lineCache.dark = dark;
+  }
+  const want = { borders: app.show.lines && !lineCache.borders, mesh: app.show.mesh && !lineCache.mesh };
+  if (!want.borders && !want.mesh) return lineCache;
+  if (!t.img) {
+    if (lineLoad !== t.src) {
+      const src = lineLoad = t.src;
+      loadImage(src).then((img) => { if (app.doc.template && app.doc.template.src === src) { app.doc.template.img = img; lineLoad = null; requestDraw(); } }, () => { /* left without lines; not tried again */ });
+    }
+    return lineCache;
+  }
+  const img = t.img, w = img.width, h = img.height;
   const read = document.createElement('canvas');
   read.width = w; read.height = h;
   const rctx = read.getContext('2d', { willReadFrequently: true });
   rctx.drawImage(img, 0, 0);
   const src = rctx.getImageData(0, 0, w, h).data;
-  const B = new ImageData(w, h), M = new ImageData(w, h), tone = dark ? [16, 17, 20] : [255, 255, 255];
+  const B = want.borders ? new ImageData(w, h) : null, M = want.mesh ? new ImageData(w, h) : null, rgb = dark ? [16, 17, 20] : [255, 255, 255];
   for (let i = 0; i < src.length; i += 4) {
     const ink = (255 - Math.min(src[i], src[i + 1], src[i + 2])) * (src[i + 3] / 255); // how far from white
-    const to = ink >= 200 ? B.data : ink >= 40 ? M.data : null;
-    if (to) { to[i] = tone[0]; to[i + 1] = tone[1]; to[i + 2] = tone[2]; to[i + 3] = 255; }
+    const to = ink >= 200 ? B : ink >= 40 ? M : null;
+    if (to) { to.data[i] = rgb[0]; to.data[i + 1] = rgb[1]; to.data[i + 2] = rgb[2]; to.data[i + 3] = 255; }
   }
   const canvas = (data, bold) => {
     const c = document.createElement('canvas');
@@ -124,7 +146,9 @@ function templateLines(doc) {
     for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) og.drawImage(c, dx, dy);
     return out;
   };
-  lineCache = { img, dark, borders: canvas(B, true), mesh: canvas(M, false) };
+  if (B) lineCache.borders = canvas(B, true);
+  if (M) lineCache.mesh = canvas(M, false);
+  t.img = null;
   return lineCache;
 }
 function newDoc() {
@@ -267,10 +291,10 @@ function draw() {
   ctx.restore();
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(composite, 0, 0);
-  if (doc.template && (app.show.lines || app.show.mesh)) {
+  if (doc.template) { // (called with both off too: that lets their pictures go)
     const L = templateLines(doc);
-    if (app.show.mesh) { ctx.globalAlpha = 0.3; ctx.drawImage(L.mesh, 0, 0, SIZE, SIZE); }
-    if (app.show.lines) { ctx.globalAlpha = 0.85; ctx.drawImage(L.borders, 0, 0, SIZE, SIZE); }
+    if (app.show.mesh && L.mesh) { ctx.globalAlpha = 0.3; ctx.drawImage(L.mesh, 0, 0, SIZE, SIZE); }
+    if (app.show.lines && L.borders) { ctx.globalAlpha = 0.85; ctx.drawImage(L.borders, 0, 0, SIZE, SIZE); }
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -2057,7 +2081,21 @@ const actions = {
   },
   // keep: remember it in the library (not for the built-in graphics, which are there already)
   async addImage(src, name, at, keep = true) {
-    const l = createImageLayer(await loadImage(src), src, name || 'Picture');
+    let img = await loadImage(src);
+    // A picture bigger than the sheet is brought down to it: it is never shown
+    // larger on the car, and kept at full size it filled memory, the saved
+    // livery, every undo step and the library (a 4000px logo is 64 MB decoded)
+    const k = SIZE / Math.max(img.width, img.height);
+    if (k < 1) try {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, c.width, c.height);
+      src = /^data:image\/jpeg/i.test(src) ? c.toDataURL('image/jpeg', 0.92) : c.toDataURL('image/png'); // a photo stays a JPEG: as a PNG it would be several times the size
+      img = await loadImage(src);
+    } catch { /* one that cannot be read back (from another site) is kept as it is */ }
+    const l = createImageLayer(img, src, name || 'Picture');
     if (keep && !library.logos.some(x => x.src === src)) {
       library.logos.unshift({ id: 'g' + newId(), name: name || 'Picture', src });
       library.logos.length = Math.min(library.logos.length, 80); // ponytail: the oldest fall off; add folders if 80 is ever tight
