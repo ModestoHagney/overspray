@@ -1007,6 +1007,15 @@ const actions = {
   exportPng() {
     paint().toBlob((b) => { if (b) download(b, safeName() + '.png'); }, 'image/png');
   },
+  // the picked layers alone, as they are painted, over a clear sheet the size of the paint
+  exportLayerPng() {
+    const ls = selectedLayers();
+    if (!ls.length) return;
+    const g = ls[0].groupId && ls.every(l => l.groupId === ls[0].groupId) ? (app.doc.groups || []).find(x => x.id === ls[0].groupId) : null;
+    const name = (ls.length > 1 ? (g ? g.name : 'layers') : ls[0].name).replace(/[^\w.-]+/g, '_');
+    const sheet = paintLayers(withSeams(withMirrors(withTints({ ...app.doc, layers: ls }))).layers, { linearEdges: true });
+    exportPaintCanvas(app.doc, sheet).toBlob((b) => { if (b) download(b, `${safeName()}_${name}.png`); }, 'image/png');
+  },
 
   // Trading Paints takes the paint as a PNG, and a finish map only as the
   // .mip the sim itself makes from the last Save to iRacing. A car's Send
