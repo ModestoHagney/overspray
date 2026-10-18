@@ -138,19 +138,39 @@ function extractZones(entries, w, h) {
   return zones;
 }
 
-// The pit box colours: iRacing reads them from small swatches on the sheet
-// (on the NSX, two in the bottom-right corner, on a layer "pitbox colors").
-// One per connected block, its colour from its middle pixel, in 2048-sheet space.
-const PITBOX_RE = /pit\s*box/i;
-function extractPitbox(entries, w, h) {
-  const layers = entries.filter(e => PITBOX_RE.test(e.layer.name || '')).map(e => e.layer);
-  if (!layers.length) return [];
-  const img = composeLayers(layers, w, h).getContext('2d').getImageData(0, 0, w, h);
+// The car's extra colours: iRacing colours parts beyond the paint from small
+// squares on the sheet, on layers such as "Pitbox Colors" (one to two squares)
+// and "Cockpit Color" (the MX5's roll cage). One per connected block, its
+// colour from its middle pixel, in 2048-sheet space, named for what it colours.
+const SWATCH_KINDS = [[/pit\s*box/i, 'Pit box'], [/cockpit/i, 'Cockpit']];
+function extractSwatches(entries, w, h) {
   const kx = SIZE / w, ky = SIZE / h, hex = (v) => v.toString(16).padStart(2, '0');
-  return alphaComponents(img, 4, 127).map(r => {
-    const i = ((r.y + (r.h >> 1)) * w + r.x + (r.w >> 1)) * 4, d = img.data;
-    return { x: Math.round(r.x * kx), y: Math.round(r.y * ky), w: Math.round(r.w * kx), h: Math.round(r.h * ky), color: '#' + hex(d[i]) + hex(d[i + 1]) + hex(d[i + 2]) };
-  });
+  const out = [];
+  for (const [re, name] of SWATCH_KINDS) {
+    const layers = entries.filter(e => re.test(e.layer.name || '')).map(e => e.layer);
+    if (!layers.length) continue;
+    const img = composeLayers(layers, w, h).getContext('2d').getImageData(0, 0, w, h), d = img.data;
+    const found = alphaComponents(img, 4, 127);
+    found.forEach((r, k) => {
+      const i = ((r.y + (r.h >> 1)) * w + r.x + (r.w >> 1)) * 4;
+      out.push({ name: found.length > 1 ? `${name} ${k + 1}` : name, x: Math.round(r.x * kx), y: Math.round(r.y * ky), w: Math.round(r.w * kx), h: Math.round(r.h * ky), color: '#' + hex(d[i]) + hex(d[i + 1]) + hex(d[i + 2]) });
+    });
+  }
+  // the pitboard (oval cars and some others): an area on a "Pitboard" layer
+  // where the board's picture goes; its outline, with a colour of its own
+  const boards = entries.filter(e => /pit\s*board/i.test(e.layer.name || '')).map(e => e.layer);
+  if (boards.length) {
+    const px = composeLayers(boards, w, h).getContext('2d').getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
+    const [pts] = detectPieces(mask, w, h);
+    if (pts) {
+      const points = pts.map(q => ({ x: Math.round(q.x * kx), y: Math.round(q.y * ky) }));
+      const xs = points.map(q => q.x), ys = points.map(q => q.y), x = Math.min(...xs), y = Math.min(...ys);
+      out.push({ name: 'Pitboard', x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, points, color: '#ffffff' });
+    }
+  }
+  return out;
 }
 
 // visible stock-decal layers composed in place (hidden alt-series variants
@@ -160,11 +180,11 @@ function extractDecals(entries, w, h) {
   return decals.length ? composeLayers(decals.map(e => e.layer), w, h) : null;
 }
 
-// Returns { src (PNG dataURL), usedWireframe (bool), pieces, zones, decals, pitbox }
+// Returns { src (PNG dataURL), usedWireframe (bool), pieces, zones, decals, swatches }
 //   pieces    — outlines of the sheet's pieces from the wireframe ([] when there are none)
 //   zones     — [{ kind: 'sponsor'|'number', x, y, w, h }] ([] when the kit has no block layers)
 //   decals    — RGBA canvas of the stock decals, for orientation probing (null if none)
-//   pitbox    — [{ x, y, w, h, color }]: the pit box colour swatches ([] when the kit has none)
+//   swatches  — [{ name, x, y, w, h, color, points? }]: the car's extra colour squares, and the pitboard by its outline ([] when the kit has none)
 export async function psdToTemplate(arrayBuffer) {
   const agPsd = await loadAgPsd();
   const psd = agPsd.readPsd(arrayBuffer);
@@ -184,12 +204,12 @@ export async function psdToTemplate(arrayBuffer) {
   // helper layers are walked without SKIP_RE (it drops "Color Change Logos")
   const all = [];
   collectAllLayers(psd.children, false, all);
-  let intel = { zones: [], decals: null, pitbox: [] };
+  let intel = { zones: [], decals: null, swatches: [] };
   try {
     intel = {
       zones: extractZones(all, psd.width, psd.height),
       decals: extractDecals(all, psd.width, psd.height),
-      pitbox: extractPitbox(all, psd.width, psd.height),
+      swatches: extractSwatches(all, psd.width, psd.height),
     };
   } catch { /* intelligence is a bonus — the wireframe still loads */ }
 

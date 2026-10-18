@@ -98,7 +98,7 @@ const TOOLS = [
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
   ['cargrad', 'New car gradient'],
-  ['extras', 'Car extras: pit box colours'],
+  ['extras', 'Car extras: pit box, cockpit and pitboard'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
 const FINISH_TOOLS = [
@@ -152,7 +152,7 @@ export function initUI(app, actions, version) {
 
   // ---------- menus ----------
   // [label, shortcut, action, { off, tick }]
-  const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.pitAt(app.sel);
+  const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.swatchAt(app.sel);
   // what can be done to the selected shapes as shapes, and whether each applies now
   const shapeCan = () => {
     const ls = actions.selectedLayers(), fills = ls.filter((l) => l.type === 'fill' && !l.specOnly), one = ls.length === 1 ? ls[0] : null;
@@ -214,7 +214,7 @@ export function initUI(app, actions, version) {
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
     $('tools').innerHTML = strip.map(([id, name]) =>
-      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.pitAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
+      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
     const opts = $('toolopts');
     if (app.tool === 'shape') {
@@ -365,7 +365,7 @@ export function initUI(app, actions, version) {
   // is changed. `name`: the markup that goes beside the colour.
   function colourHead(name) {
     const d = app.doc, sel = actions.selected(), open = openFolds.has('f-saved');
-    const pit = actions.pitAt(app.sel), linked = app.sel === 'base' ? d.baseRef : pit ? pit.ref : sel ? sel.colorRef : null;
+    const pit = actions.swatchAt(app.sel), linked = app.sel === 'base' ? d.baseRef : pit ? pit.ref : sel ? sel.colorRef : null;
     const saved = d.palette.map((c) => `<span class="chipwrap"><button class="chip${c.id === linked ? ' on' : ''}" data-pal="${esc(c.id)}" title="${esc(c.name)} · ${esc(c.color.toUpperCase())}. Set to it, and it follows when this colour is changed. Right-click to rename or change."><i style="background:${esc(c.color)}"></i><span>${esc(c.name)}</span></button><button class="chipedit" data-edit="${esc(c.id)}" title="Rename or change" aria-label="Edit ${esc(c.name)}">${svg('edit')}</button></span>`).join('');
     // the colour's name under the selection's: its saved colour's, or the next "Colour n"
     const cur = actions.currentColour(), named = d.palette.find((c) => c.id === linked) || d.palette.find((c) => c.color === cur);
@@ -389,11 +389,12 @@ export function initUI(app, actions, version) {
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
-    if (actions.pitAt(app.sel)) { // Car extras: the pit box swatches, one at a time
-      const n = (app.doc.pitbox || []).length;
-      return colourHead(`<span class="pname">Pit box ${+app.sel.slice(3) + 1}</span>`) +
-        (n < 2 ? '' : `<div class="seg">${app.doc.pitbox.map((p, i) => `<button data-pitpick="pit${i}" aria-pressed="${app.sel === 'pit' + i}">Pit box ${i + 1}</button>`).join('')}</div>`) +
-        '<div class="note">iRacing colours your pit box from these</div>';
+    if (actions.swatchAt(app.sel)) { // Car extras: the pit box, cockpit and pitboard colours, one at a time
+      const all = app.doc.swatches, board = !!actions.swatchAt(app.sel).points;
+      return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
+        (all.length < 2 ? '' : `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`) +
+        (board ? '<div class="note">The board\'s background. Anything you add now (a logo, text, a shape) stays inside the board.</div>'
+          : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there comes out as stripes.</div>');
     }
     const many = actions.selectedLayers();
     if (many.length > 1) { // several: what can be done to them together
@@ -1243,7 +1244,7 @@ export function initUI(app, actions, version) {
       if (l) { l.visible = !l.visible; actions.change(); }
       return;
     }
-    if (t.dataset.pitpick) return actions.select(t.dataset.pitpick);
+    if (t.dataset.swpick) return actions.select(t.dataset.swpick);
     if (t.dataset.layer) { // Shift: the whole run from the row clicked last to this one; Ctrl: add or take out this one
       if (e.shiftKey && t.dataset.layer !== 'base' && panels.layers.contains(t)) return actions.selectRange(t.dataset.layer);
       // a layer's own row is that layer alone, even in a group; the group's row is the group

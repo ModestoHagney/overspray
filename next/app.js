@@ -28,7 +28,7 @@ import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, laye
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
-import { regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
+import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
 
 export const VERSION = self.VERSION || 'unknown'; // from version.js, which the page loads first
 
@@ -59,6 +59,7 @@ export const app = {
   bandWidth: 60,                      // px on the sheet
   stamp: { key: 'star', size: 120 },  // what the Stamp tool places: a shape's key (see motifOf) and its size on the sheet
   trimming: false,                    // clicks on the sheet choose the selected layer's panels
+  board: null,                        // the pitboard picked in Car extras: { p (its swatch), had (layer ids then) }; what is added since stays inside it
   piece: null,                        // Map mode: the selected panel's id
   centreFor: null,                    // Map mode: the panel a centreline is being set on, if fixed
   mapShow: { colours: true },         // Map mode: panel colours and names over the sheet
@@ -307,6 +308,10 @@ function draw() {
       ctx.lineWidth = 1.5; ctx.stroke();
     } catch { /* a layer with no picture yet has no box */ }
   }
+  if (app.board) { // the pitboard being added to
+    trace(app.board.p.points);
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+  }
   if (tools) tools.drawOverlay(ctx, accent);
   if (carGrad) { carGrad.drawOverlay(ctx, accent); carGrad.sync(); }
   $('zoom-readout').textContent = Math.round(app.view.zoom * 100) + '%';
@@ -391,6 +396,7 @@ async function applySnap(snap) {
   const doc = await deserializeDoc(unpack(snap));
   if (seq !== snapSeq) return;
   app.doc = doc;
+  app.board = null;
   if (!fixedSel() && !app.doc.layers.some(l => l.id === app.sel)) app.sel = 'base';
   syncUndo();
   change();
@@ -433,12 +439,29 @@ function settle() {
   if (held) { quickTimer = setTimeout(settle, 160); return; }
   quick = false; dirty = true; requestDraw();
 }
+// layers added while the pitboard is picked are trimmed to it
+function onBoard() {
+  const { p, had } = app.board;
+  for (const l of app.doc.layers) {
+    if (had.has(l.id)) continue;
+    had.add(l.id);
+    if (l.car) continue; // a car gradient is the whole car's
+    // put on the sheet elsewhere (the middle of the view, say): it moves onto the board
+    try {
+      const cs = layerCorners(l), cx = cs.reduce((t, q) => t + q.x, 0) / cs.length, cy = cs.reduce((t, q) => t + q.y, 0) / cs.length;
+      if (!pointInPolygon(p.points, cx, cy)) moveLayer(l, Math.round(p.x + p.w / 2 - cx), Math.round(p.y + p.h / 2 - cy));
+    } catch { /* a layer with no picture yet stays where it is */ }
+    l.clip = [p.points.map(q => ({ x: q.x, y: q.y }))];
+    l.clipAt = [{ x: Math.round(p.x + p.w / 2), y: Math.round(p.y + p.h / 2) }];
+  }
+}
 function change({ panels = true, now = false } = {}) {
   skipCapture = false; // a real edit after an undo is recorded
   clearTimeout(quickTimer);
   quick = !panels && !now; // a drag, a slider, a nudge: more of the same is coming
   if (quick) quickTimer = setTimeout(settle, 160);
   dirty = true;
+  if (app.board) onBoard();
   requestDraw();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(runSave, now ? 0 : 450);
@@ -654,10 +677,10 @@ function pickFinish(t, how) {
   app.ftarget = all[0] || null; app.fmore = all.slice(1);
 }
 
-// the pit box swatch a selection names ('pit0', 'pit1', …), or null
-const pitAt = (id) => /^pit\d+$/.test(id || '') ? (app.doc.pitbox || [])[+id.slice(3)] || null : null;
-// the base coat or a pit box swatch: a colour of the livery's, not a layer
-const fixedSel = () => app.sel === 'base' || !!pitAt(app.sel);
+// the car's extra colour a selection names ('sw0', 'sw1', …), or null
+const swatchAt = (id) => /^sw\d+$/.test(id || '') ? (app.doc.swatches || [])[+id.slice(2)] || null : null;
+// the base coat or an extra colour: a colour of the livery's, not a layer
+const fixedSel = () => app.sel === 'base' || !!swatchAt(app.sel);
 
 function selectedLayers() {
   const ids = app.sels.length > 1 && app.sels.includes(app.sel) ? app.sels : app.sel && app.sel !== 'base' ? [app.sel] : [];
@@ -881,8 +904,9 @@ const actions = {
       const t = await loadTemplate(file, d.regionMap);
       d.template = t.template;
       d.regionMap = t.regionMap;
-      // the template's pit box swatches; ones already set keep their colours
-      d.pitbox = t.pitbox.map((p, i) => d.pitbox && d.pitbox[i] ? { ...p, color: d.pitbox[i].color, ref: d.pitbox[i].ref } : { ...p, ref: null });
+      // the template's extra colours; ones already set keep their colours
+      app.board = null;
+      d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref } : { ...p, ref: null }; });
       if (!fixedSel() && !d.layers.some(l => l.id === app.sel)) app.sel = 'base';
       if (!d.name || d.name === 'untitled livery') d.name = t.carName;
       fit();
@@ -1246,10 +1270,10 @@ const actions = {
     actions.mapChanged(`Centreline removed from ${r.name}`);
   },
   // One fade over the whole car, painted on each panel by its car line (see cargrad.js)
-  // the left strip's Car extras: the pit box colours, in Properties
+  // the left strip's Car extras: the pit box, cockpit and pitboard, in Properties
   openExtras() {
-    if (!(app.doc.pitbox || []).length) { ui.say('Load the car\'s template PSD first: the pit box colours come from it', true); return; }
-    actions.select(pitAt(app.sel) ? app.sel : 'pit0');
+    if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, cockpit or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
+    actions.select(swatchAt(app.sel) ? app.sel : 'sw0');
   },
   addCarGradient() {
     if (app.mode !== 'paint') actions.setMode('paint');
@@ -2134,11 +2158,11 @@ const actions = {
   // what the colour controls are showing: the selection's colour, else the
   // colour the next shape will get
   selCorner,
-  pitAt,
+  swatchAt,
   currentColour() {
     const l = actions.selected();
     if (app.sel === 'base') return app.doc.baseColor;
-    if (pitAt(app.sel)) return pitAt(app.sel).color;
+    if (swatchAt(app.sel)) return swatchAt(app.sel).color;
     if (l && l.type === 'text') return l.textColor || app.colour;
     return l && (l.type === 'fill' || l.type === 'image') && l.color ? l.color : app.colour;
   },
@@ -2146,10 +2170,10 @@ const actions = {
   // shapes. ref: the saved colour it now follows, or null for a one-off.
   // typed: it came from a control the user is still holding, so panels stay.
   applyColour(hex, { ref = null, typed = false } = {}) {
-    app.colour = hex;
+    if (!swatchAt(app.sel)) app.colour = hex; // an extra's colour is not the next shape's: a logo on the pitboard would vanish into it
     let painted = 0;
     if (app.sel === 'base') { app.doc.baseColor = hex; app.doc.baseRef = ref; painted = 1; }
-    else if (pitAt(app.sel)) { Object.assign(pitAt(app.sel), { color: hex, ref }); painted = 1; }
+    else if (swatchAt(app.sel)) { Object.assign(swatchAt(app.sel), { color: hex, ref }); painted = 1; }
     else for (const l of selectedLayers()) { // every selected shape and text takes it
       if (l.type === 'fill') { l.color = hex; l.colorRef = ref; keepFadeOut(l); painted++; }
       else if (l.type === 'text') { l.textColor = hex; l.colorRef = ref; regenerateText(l); painted++; }
@@ -2318,7 +2342,7 @@ const actions = {
   nameColour(name) {
     const d = app.doc, sel = actions.selected(), color = String(actions.currentColour()).toLowerCase();
     name = String(name).trim().slice(0, 40);
-    const ref = app.sel === 'base' ? d.baseRef : pitAt(app.sel) ? pitAt(app.sel).ref : sel ? sel.colorRef : null;
+    const ref = app.sel === 'base' ? d.baseRef : swatchAt(app.sel) ? swatchAt(app.sel).ref : sel ? sel.colorRef : null;
     let c = d.palette.find(x => x.id === ref) || d.palette.find(x => x.color === color);
     if (!name) { ui.refresh(); return; }
     if (c && c.id === ref) { c.name = name; change({ now: true }); return; }
@@ -2336,7 +2360,7 @@ const actions = {
       d.palette = d.palette.filter(x => x.id !== id);
       for (const l of d.layers) if (l.colorRef === id) l.colorRef = null; // they keep the colour, just stop following
       if (d.baseRef === id) d.baseRef = null;
-      for (const p of d.pitbox) if (p.ref === id) p.ref = null;
+      for (const p of d.swatches) if (p.ref === id) p.ref = null;
     } else {
       c.name = res.name || c.name;
       c.color = res.color;
@@ -2345,7 +2369,7 @@ const actions = {
         if (l.type === 'text') { l.textColor = c.color; regenerateText(l); } else { l.color = c.color; keepFadeOut(l); }
       }
       if (d.baseRef === id) d.baseColor = c.color;
-      for (const p of d.pitbox) if (p.ref === id) p.color = c.color;
+      for (const p of d.swatches) if (p.ref === id) p.color = c.color;
     }
     change({ now: true });
   },
@@ -2380,8 +2404,10 @@ const actions = {
   // Layers list, or a double click on the sheet). Otherwise one of a group brings the rest.
   select(id, add = false, alone = false) {
     anchor = id;
+    const b = swatchAt(id);
+    app.board = b && b.points ? { p: b, had: new Set(app.doc.layers.map(l => l.id)) } : null;
     const real = id !== 'base' && app.doc.layers.some(l => l.id === id);
-    if (id !== 'base' && !pitAt(id) && !real) { app.sel = null; app.sels = []; }
+    if (id !== 'base' && !swatchAt(id) && !real) { app.sel = null; app.sels = []; }
     else if (add && real && app.sel && app.sel !== 'base') {
       const cur = new Set(selectedLayers().map(l => l.id)), had = cur.has(id);
       for (const m of (alone ? [id] : groupOf(id))) had ? cur.delete(m) : cur.add(m);
