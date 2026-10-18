@@ -67,7 +67,7 @@ export function initCarGradient(app, env) {
       '<div class="cg-lines">' + lines().map((cl, k) => {
         const lo = Math.min(cl.a, cl.b), hi = Math.max(cl.a, cl.b), on = picked.some((id) => cl.regions.includes(id));
         return `<div class="cg-line${on ? ' on' : ''}${k === fresh ? ' cue' : ''}" data-line="${k}" style="--c:${esc(cl.color || 'var(--accent)')}">` +
-          `<div class="cg-track" title="${esc(names(cl.regions))}. Drag to move, drag an end to stretch. Click it to add the picked panels."><span class="cg-bar${cl.b < cl.a ? ' back' : ''}" style="left:${lo * 100}%;width:${(hi - lo) * 100}%"><i data-lend="${cl.a <= cl.b ? 'a' : 'b'}"></i><i data-lend="${cl.a <= cl.b ? 'b' : 'a'}"></i></span></div>` +
+          `<div class="cg-track" title="${esc(names(cl.regions))}. Drag to move, drag an end to stretch. Click it to add the picked panels."><span class="cg-bar" style="left:${lo * 100}%;width:${(hi - lo) * 100}%"><i data-lend="${cl.a <= cl.b ? 'a' : 'b'}"></i><i data-lend="${cl.a <= cl.b ? 'b' : 'a'}"></i></span></div>` +
           `<button class="icon" data-lineout="${k}" title="Take ${esc(names(cl.regions))} off" aria-label="Take ${esc(names(cl.regions))} off">${X}</button></div>`;
       }).join('') + '</div>' +
       `<div class="cg-acts"><button class="btn" data-cg="add"${bl.length >= 12 ? ' disabled' : ''}>Add a colour</button>` +
@@ -151,7 +151,7 @@ export function initCarGradient(app, env) {
   }
   function showBar(k, cl) {
     const lo = Math.min(cl.a, cl.b), hi = Math.max(cl.a, cl.b), bar = el.querySelector(`[data-line="${k}"] .cg-bar`);
-    bar.style.left = lo * 100 + '%'; bar.style.width = (hi - lo) * 100 + '%'; bar.classList.toggle('back', cl.b < cl.a);
+    bar.style.left = lo * 100 + '%'; bar.style.width = (hi - lo) * 100 + '%';
   }
   el.addEventListener('pointerdown', (e) => {
     const t = e.target;
