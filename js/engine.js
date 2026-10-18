@@ -53,8 +53,10 @@ const texCache = new Map();
 
 export function specTexture(key, p) {
   const cacheKey = `${key}|${p.met}|${p.rough}|${p.clear}|${p.scale || 0}|${p.density || 0}|${p.contrast || 0}`;
-  if (texCache.has(cacheKey)) return texCache.get(cacheKey);
-  if (texCache.size > 8) texCache.clear(); // slider scrubbing — keep memory flat
+  const had = texCache.get(cacheKey);
+  if (had) { texCache.delete(cacheKey); texCache.set(cacheKey, had); return had; } // used again: it moves to the newest end
+  // each is two full sheets (32 MB): the last 3 kept, enough for a base and two sparkle layers without remaking them every redraw
+  if (texCache.size >= 3) texCache.delete(texCache.keys().next().value);
 
   const c = document.createElement('canvas');
   c.width = c.height = SIZE;
@@ -728,9 +730,9 @@ scratch.width = scratch.height = SIZE;
 paintCanvas.getContext('2d', { willReadFrequently: true });
 scratch.getContext('2d', { willReadFrequently: true });
 specCanvas.getContext('2d', { willReadFrequently: true });
-// the shadow's own buffer: drawLayer is itself called with `scratch` as the target
-const fxScratch = document.createElement('canvas');
-fxScratch.width = fxScratch.height = SIZE;
+// the shadow's own buffer: drawLayer is itself called with `scratch` as the target.
+// Made when first needed: most liveries have no shadow
+let fxScratch = null;
 
 // the layer's own pixels, without opacity, trim or shadow
 function drawLayerContent(ctx, layer) {
@@ -810,6 +812,7 @@ export function drawLayer(ctx, layer, forSpec = false) {
   if (doShadow) {
     // the layer is drawn once into a buffer; drawn fully off-canvas from
     // there, only its shadow lands in view, beneath the layer itself
+    if (!fxScratch) { fxScratch = document.createElement('canvas'); fxScratch.width = fxScratch.height = SIZE; }
     const rctx = fxScratch.getContext('2d');
     rctx.clearRect(0, 0, SIZE, SIZE);
     drawCopies(rctx, layer);
@@ -996,12 +999,13 @@ export function renderPaint(doc, { linearEdges: lin = false } = {}) {
 // the whole stack. Returns null (caller falls back to renderPaint) when the
 // moving layers aren't a contiguous run of the paint-visible stack.
 
-const dragBelow = document.createElement('canvas');
-dragBelow.width = dragBelow.height = SIZE;
-const dragAbove = document.createElement('canvas');
-dragAbove.width = dragAbove.height = SIZE;
-dragBelow.getContext('2d', { willReadFrequently: true }); // (they are mixed into by the same reads)
-dragAbove.getContext('2d', { willReadFrequently: true });
+// The slabs are made for each drag and go with the cache once it is let go (32 MB).
+const slab = () => {
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  c.getContext('2d', { willReadFrequently: true }); // (they are mixed into by the same reads)
+  return c;
+};
 
 export function buildDragCache(doc, movingIds) {
   const idxs = [];
@@ -1013,31 +1017,32 @@ export function buildDragCache(doc, movingIds) {
     if (!movingIds.has(l.id) && inPaintMap(l)) return null; // static layer interleaved
   }
 
-  const bctx = dragBelow.getContext('2d');
+  const below = slab(), above = slab();
+  const bctx = below.getContext('2d');
   bctx.clearRect(0, 0, SIZE, SIZE);
   paintBase(bctx, doc);
   paintSwatches(bctx, doc, true);
   for (let i = 0; i < lo; i++) {
     if (inPaintMap(doc.layers[i])) paintLayerInto(bctx, doc.layers[i]);
   }
-  const actx = dragAbove.getContext('2d');
+  const actx = above.getContext('2d');
   actx.clearRect(0, 0, SIZE, SIZE);
   for (let i = hi + 1; i < doc.layers.length; i++) {
     if (doc.layers[i].blend) return null; // a blend above needs what is under it: no shortcut
     if (inPaintMap(doc.layers[i])) paintLayerInto(actx, doc.layers[i]);
   }
   paintSwatches(actx, doc);
-  return { movingIds };
+  return { movingIds, below, above };
 }
 
 export function renderPaintWithDrag(doc, cache) {
   const ctx = paintCanvas.getContext('2d');
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.drawImage(dragBelow, 0, 0);
+  ctx.drawImage(cache.below, 0, 0);
   for (const layer of doc.layers) {
     if (cache.movingIds.has(layer.id) && inPaintMap(layer)) paintLayerInto(ctx, layer);
   }
-  ctx.drawImage(dragAbove, 0, 0);
+  ctx.drawImage(cache.above, 0, 0);
   return paintCanvas;
 }
 
@@ -1264,15 +1269,17 @@ function shapePts(pts) {
 // A picture already loaded is handed back, not decoded again: every undo and
 // redo reloads the whole livery, and its template alone is 16 MB decoded, with
 // more made from it (the line overlays are kept by which picture they came
-// from). The last 60 different pictures are kept.
-const imageCache = new Map(); // src → promise of its image, oldest first
+// from). Only pictures still in use are kept: one no layer holds any more (a
+// deleted logo) is let go, and decoded again from its saved copy if an undo
+// brings it back.
+const imageCache = new Map(); // src → promise while it decodes, then a WeakRef to the image
 export function loadImage(src) {
+  for (const [k, v] of imageCache) if (v instanceof WeakRef && !v.deref()) imageCache.delete(k);
   const had = imageCache.get(src);
-  if (had) { imageCache.delete(src); imageCache.set(src, had); return had; } // used again: it moves to the newest end
+  if (had) return had instanceof WeakRef ? Promise.resolve(had.deref()) : had;
   const made = decodeImage(src);
   imageCache.set(src, made);
-  made.catch(() => imageCache.delete(src));
-  if (imageCache.size > 60) imageCache.delete(imageCache.keys().next().value);
+  made.then((img) => imageCache.set(src, new WeakRef(img)), () => imageCache.delete(src));
   return made;
 }
 function decodeImage(src) {
