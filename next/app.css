@@ -453,11 +453,11 @@ option.sect, option.act { text-align: left; text-align-last: left; }
 .cg-ends, .cg-strip, .cg-blocks { margin-right: 30px; } /* the bars' delete buttons sit in this gutter, so the bars line up with the strip */
 .cg-lines { margin-top: 8px; display: grid; gap: 4px; }
 .cg-line { display: grid; grid-template-columns: 1fr 24px; gap: 6px; align-items: center; }
-.cg-line .icon { width: 24px; height: 24px; }
+.cg-line .icon { width: 20px; height: 20px; }
 .cg-line .icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-.cg-track { position: relative; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--bar); cursor: pointer; }
+.cg-track { position: relative; height: 14px; border: 1px solid var(--line); border-radius: 5px; background: var(--bar); cursor: pointer; }
 .cg-track:hover { border-color: var(--muted); }
-.cg-bar { position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 5px; cursor: grab; background: color-mix(in srgb, var(--c) 65%, transparent); } /* one flat colour, so the bars are easy to tell apart; the solid ends stand out */
+.cg-bar { position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 4px; cursor: grab; background: color-mix(in srgb, var(--c) 65%, transparent); } /* one flat colour, so the bars are easy to tell apart; the solid ends stand out */
 .cg-bar i { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 1; cursor: ew-resize; background: var(--c); border-radius: 3px; }
 .cg-bar i:first-child { left: -3px; } .cg-bar i:last-child { right: -3px; }
 .cg-line.on .cg-track { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }

@@ -339,7 +339,7 @@ export function initCarGradient(app, env) {
       const A = docToScreen(L.from.x, L.from.y), B = docToScreen(L.to.x, L.to.y), t = Math.atan2(B.y - A.y, B.x - A.x);
       ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
       for (const k of [-1, 1]) { ctx.moveTo(B.x, B.y); ctx.lineTo(B.x - 12 * Math.cos(t + k * 0.45), B.y - 12 * Math.sin(t + k * 0.45)); }
-      ctx.lineCap = 'round'; ctx.strokeStyle = '#101114'; ctx.lineWidth = w + 2.5; ctx.stroke(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke(); ctx.lineCap = 'butt';
+      ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.lineWidth = w + 1; ctx.stroke(); ctx.lineCap = 'butt'; // one solid colour, like its bar
     };
     const ls = lines(), m = map(), all = carLinesWithTwins(m), twins = all.slice(ls.length);
     // a paired panel following its twin's line: dashed, as it is set from the other side
