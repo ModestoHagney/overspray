@@ -34,6 +34,7 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: 0; border-radius: 6px; padding: 0; }
 button:disabled { cursor: default; opacity: .38; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); outline-offset: -1px; } /* typing in a box: a thin grey edge, not the blue ring */
 
 .app { height: 100%; display: grid; grid-template: "bar bar" auto "tools stage" minmax(0, 1fr) / auto minmax(0, 1fr); }
 
@@ -133,7 +134,7 @@ button:disabled { cursor: default; opacity: .38; }
 .row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
 .row .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line); flex: none; background-size: cover; background-position: center; }
 .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .rename { padding: 1px 5px; margin: -2px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--bar); color: var(--fg); outline: none; cursor: text; }
+.row .rename { padding: 1px 5px; margin: -2px 0; border: 1px solid var(--muted); border-radius: 4px; background: var(--bar); color: var(--fg); outline: none; cursor: text; }
 .row .eye { width: 24px; height: 24px; display: grid; place-items: center; color: var(--muted); border-radius: 5px; flex: none; }
 .row .eye:hover { background: var(--line); }
 .row .rowx { width: 20px; height: 20px; display: grid; place-items: center; color: var(--muted); border-radius: 50%; flex: none; opacity: 0; }
@@ -179,13 +180,13 @@ dialog input[type="text"], dialog select { width: 100%; min-width: 0; padding: 4
 .field input.num { font: 12px var(--mono); appearance: textfield; -moz-appearance: textfield; }
 .field input.num::-webkit-inner-spin-button, .field input.num::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .field textarea { width: 100%; min-width: 0; padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bar); }
-.field input:focus-visible, .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field input:focus-visible, .field select:focus-visible { outline: 1px solid var(--muted); outline-offset: -1px; }
 .field:hover, .switch:hover, .fillbar:hover { border-color: var(--muted); }
 /* a slider: one bar that fills up, name on the left, value on the right */
 .fillbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 30px; margin: 4px 6px; padding: 0 4px 0 10px; border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; overflow: hidden; cursor: ew-resize; user-select: none; touch-action: none;
   background: linear-gradient(color-mix(in srgb, var(--accent) 28%, transparent), color-mix(in srgb, var(--accent) 28%, transparent)) 0 0 / var(--p, 0%) 100% no-repeat, var(--bar); }
 .fillbar input[type="range"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.fillbar:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.fillbar:focus-within { outline: 1px solid var(--muted); outline-offset: -1px; }
 .bname { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nbox { width: 46px; flex: none; padding: 2px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--fg); font: 12px var(--mono); text-align: right; pointer-events: none; appearance: textfield; -moz-appearance: textfield; }
 .nbox::-webkit-inner-spin-button, .nbox::-webkit-outer-spin-button { appearance: none; margin: 0; }
@@ -460,7 +461,7 @@ option.sect, option.act { text-align: left; text-align-last: left; }
 .cg-bar { position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 4px; cursor: grab; background: color-mix(in srgb, var(--c) 65%, transparent); } /* one flat colour, so the bars are easy to tell apart; the solid ends stand out */
 .cg-bar i { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 1; cursor: ew-resize; background: var(--c); border-radius: 3px; }
 .cg-bar i:first-child { left: -3px; } .cg-bar i:last-child { right: -3px; }
-.cg-line.on .cg-track { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cg-line.on .cg-track { border-color: var(--c); box-shadow: 0 0 0 1px var(--c); } /* the picked panel's bar, in its own colour */
 @keyframes cg-cue { 50% { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 5px var(--accent); } }
 .cg-line.cue .cg-track, .btn.cue { animation: cg-cue 1.2s ease-in-out infinite; }
 .cgsw { width: 40px; height: 40px; flex: none; border-radius: 6px; border: 1px solid var(--line); }
