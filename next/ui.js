@@ -393,7 +393,6 @@ export function initUI(app, actions, version) {
       const all = app.doc.swatches, board = !!actions.swatchAt(app.sel).points;
       return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
         (all.length < 2 ? '' : `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`) +
-        `<label class="switch" title="Off: the layers under it show there instead, so you can paint it yourself">${board ? 'Paint the background' : 'Paint this square'}<input id="f-swon" type="checkbox"${actions.swatchAt(app.sel).off ? '' : ' checked'}></label>` +
         (board ? '<div class="note">The board\'s background. Anything you add now (a logo, text, a shape) stays inside the board.</div>'
           : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there comes out as stripes.</div>');
     }
@@ -877,7 +876,6 @@ export function initUI(app, actions, version) {
     if (/^fn-/.test(id)) return refresh(); // a slider let go: Reset comes or goes, the list's name updates
     if (id === 'f-mirrored') return actions.mirror();
     if (id === 'f-continues') return actions.continues();
-    if (id === 'f-swon') return actions.swatchOn(e.target.checked);
     if (id === 'f-font') return actions.setFont(e.target.value);
     if (id === 'f-fontWeight') { actions.setProp('fontWeight', +e.target.value === 400 ? null : +e.target.value); return; }
     if (id === 'f-align') { actions.setProp('align', e.target.value === 'center' ? null : e.target.value); return; }

@@ -78,8 +78,7 @@ test('extra colour squares keep their name, place and colour through save and lo
   doc.swatches = [{ name: 'Cockpit', x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: 'gone' }, { name: 'Pit box', x: 9999, y: -5, w: 27, h: 24, color: '#03ff32', ref: null }, { x: 0, y: 0, w: 1, h: 1, color: 'red' }];
   const back = await deserializeDoc(JSON.parse(JSON.stringify(serializeDoc(doc))));
   assert.deepEqual(back.swatches, [{ name: 'Cockpit', x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: null }, { name: 'Pit box', x: 2048, y: 0, w: 27, h: 24, color: '#03ff32', ref: null }]);
-  const board = await deserializeDoc({ swatches: [{ name: 'Pitboard', x: 0, y: 0, w: 10, h: 10, color: '#ffffff', off: true, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 99999, y: 10 }] }] });
-  assert.equal(board.swatches[0].off, true); // turned off: the layers under it paint there
+  const board = await deserializeDoc({ swatches: [{ name: 'Pitboard', x: 0, y: 0, w: 10, h: 10, color: '#ffffff', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 99999, y: 10 }] }] });
   assert.deepEqual(board.swatches[0].points, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 2048, y: 10 }]);
   const old = await deserializeDoc({ pitbox: [{ x: 1, y: 2, w: 3, h: 4, color: '#ff0000' }, { x: 5, y: 2, w: 3, h: 4, color: '#00ff00' }] });
   assert.deepEqual(old.swatches.map(p => p.name), ['Pit box 1', 'Pit box 2']);
