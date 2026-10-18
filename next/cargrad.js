@@ -58,7 +58,6 @@ export function initCarGradient(app, env) {
     if (!l) { close(); return; }
     const bl = l.car.blocks, m = map();
     el.innerHTML = `<header><b>Car gradient</b><button class="icon" data-cg="close" title="Close" aria-label="Close">${X}</button></header>` +
-      '<div class="cg-ends"><span>Front</span><span>Back</span></div>' +
       `<div class="cg-strip" data-cg="strip" style="background:${carCss(bl)}"></div>` +
       '<div class="cg-blocks">' + bl.map((b, k) => `<div class="cg-block" data-k="${k}" style="left:${b.from * 100}%;width:${(b.to - b.from) * 100}%">` +
         `<input type="color" id="cg-c${k}" data-cgc="${k}" value="${esc(b.color)}" aria-label="Colour ${k + 1}" title="Drag to move it, drag its ends to make it longer or shorter, click to change it. A gap fades, touching colours meet at a sharp edge.">` +
