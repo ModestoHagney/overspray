@@ -394,7 +394,7 @@ export function initUI(app, actions, version) {
       return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
         (all.length < 2 ? '' : `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`) +
         (board ? '<div class="note">The board\'s background. Anything you add now (a logo, text, a shape) stays inside the board.</div>'
-          : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there comes out as stripes.</div>');
+          : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there just blends or makes patterns.</div>');
     }
     const many = actions.selectedLayers();
     if (many.length > 1) { // several: what can be done to them together
