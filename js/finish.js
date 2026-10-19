@@ -48,6 +48,26 @@ export function writeFinish(f, hint = 'gloss') {
   const key = presetOf(base) || (FINISHES.includes(hint) ? hint : 'gloss');
   return { material: key, params: presetOf(base) ? null : base };
 }
+// The livery has one sparkle: every finish with Sparkle on (the base coat,
+// a layer's or area's own, a colour's rule) has the same amount, size,
+// strength and brightness, over its own three numbers. So the whole sheet
+// shares one sparkle pattern (engine.js sparklePattern).
+// → the livery's sparkle (the first one found: base coat, then layers bottom up, then colour rules), or null
+export function liverySparkle(doc) {
+  const all = [[doc.baseMaterial, doc.baseMatParams], ...doc.layers.map(l => [l.material, l.matParams]), ...(doc.finishRules || []).map(r => [r.material, r.params])];
+  for (const [m, p] of all) { const s = readFinish(m, p).sparkle; if (s) return s; }
+  return null;
+}
+// every finish with Sparkle on given this sparkle (default: the livery's own,
+// so one that came in different, as a pasted layer or an old livery's, takes it)
+export function oneSparkle(doc, sparkle = liverySparkle(doc)) {
+  if (!sparkle) return;
+  const fix = (m, p) => { const f = readFinish(m, p); return f.sparkle ? writeFinish({ ...f, sparkle }) : null; };
+  let w = fix(doc.baseMaterial, doc.baseMatParams);
+  if (w) { doc.baseMaterial = w.material; doc.baseMatParams = w.params; }
+  for (const l of doc.layers) if ((w = fix(l.material, l.matParams))) { l.material = w.material; l.matParams = w.params; }
+  for (const r of doc.finishRules || []) if ((w = fix(r.material, r.params))) { r.material = w.material; r.params = w.params; }
+}
 // what to call it: "Matte", "Matte + sparkle", "Custom"…
 export function finishLabel(material, params) {
   const f = readFinish(material, params), key = presetOf(f);

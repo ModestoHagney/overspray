@@ -9,27 +9,23 @@
 export function encodeTGA(rgba, w, h, { alpha = false } = {}) {
   const bpp = alpha ? 4 : 3;
 
-  const header = new Uint8Array(18);
-  header[2] = 2;                          // uncompressed true-color
-  header[12] = w & 0xff;
-  header[13] = (w >> 8) & 0xff;
-  header[14] = h & 0xff;
-  header[15] = (h >> 8) & 0xff;
-  header[16] = bpp * 8;                   // bits per pixel
-  header[17] = alpha ? 0x28 : 0x20;       // top-left origin (+8 alpha bits)
+  // one buffer, header then body: a 2048 paint is 12 MB, a spec map 16 MB, so no second copy
+  const out = new Uint8Array(18 + w * h * bpp);
+  out[2] = 2;                          // uncompressed true-color
+  out[12] = w & 0xff;
+  out[13] = (w >> 8) & 0xff;
+  out[14] = h & 0xff;
+  out[15] = (h >> 8) & 0xff;
+  out[16] = bpp * 8;                   // bits per pixel
+  out[17] = alpha ? 0x28 : 0x20;       // top-left origin (+8 alpha bits)
 
-  const body = new Uint8Array(w * h * bpp);
-  let o = 0;
+  let o = 18;
   for (let i = 0; i < rgba.length; i += 4) {
-    body[o++] = rgba[i + 2]; // B
-    body[o++] = rgba[i + 1]; // G
-    body[o++] = rgba[i];     // R
-    if (alpha) body[o++] = 255; // full effect everywhere
+    out[o++] = rgba[i + 2]; // B
+    out[o++] = rgba[i + 1]; // G
+    out[o++] = rgba[i];     // R
+    if (alpha) out[o++] = 255; // full effect everywhere
   }
-
-  const out = new Uint8Array(18 + body.length);
-  out.set(header, 0);
-  out.set(body, 18);
   return out;
 }
 

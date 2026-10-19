@@ -49,72 +49,93 @@ function mulberry32(seed) {
 }
 
 const clamp255 = (v) => Math.max(0, Math.min(255, v));
-const texCache = new Map();
-
-export function specTexture(key, p) {
-  const cacheKey = `${key}|${p.met}|${p.rough}|${p.clear}|${p.scale || 0}|${p.density || 0}|${p.contrast || 0}`;
-  if (texCache.has(cacheKey)) return texCache.get(cacheKey);
-  if (texCache.size > 8) texCache.clear(); // slider scrubbing — keep memory flat
-
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  const ctx = c.getContext('2d');
-  const id = ctx.createImageData(SIZE, SIZE);
-  const d = id.data;
+// Sparkle is one pattern for the whole livery (finish.js oneSparkle): each
+// pixel says how far a fleck there pushes the finish under it toward full
+// metal (a), how much it cuts the roughness (b) and adds back (n). Kept apart
+// from the finish's own three numbers, the one pattern serves every finish it
+// lies over: 12 MB, made again only when the sparkle itself changes.
+let sparkle = null; // { key, a, b, n, light }
+// coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
+// spikes metallic and carries its OWN roughness, so different chips
+// catch the light at different angles — the tumbling-glitter look.
+// each(x, y, side, flash, roughness added), in the order they are laid
+function glitterChips(p, each) {
   const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
   const k = (p.contrast ?? 100) / 100;
-  // Sparkle also comes as `canvas.light`: the same flecks in white, each as
-  // see-through as it is weak. Laid over the paint (see sparkleLight) it
-  // lightens the colour under every fleck, so a fleck reads bright even with
-  // nothing to mirror. A fleck of full mirror metal with nothing bright to
-  // reflect is otherwise a dark speck.
-  const light = key === 'flake' || key === 'glitter' ? document.createElement('canvas') : null;
-  if (light) { light.width = light.height = SIZE; c.light = light; }
-
-  if (key === 'flake') {
+  const size = Math.max(2, Math.round(p.scale ?? 4));
+  const density = Math.max(1, Math.min(80, p.density ?? 30));
+  const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
+  for (let c = 0; c < count; c++) {
+    const x = Math.floor(rand() * SIZE);
+    const y = Math.floor(rand() * SIZE);
+    const flash = rand() * k;                       // how hard this chip flashes
+    const n = Math.round(rand() * 30);
+    each(x, y, Math.max(1, Math.round(size * (0.7 + rand() * 0.6))), flash, n);
+  }
+}
+function sparklePattern(kind, p) {
+  const key = `${kind}|${p.scale || 0}|${p.density || 0}|${p.contrast ?? 100}`;
+  if (sparkle && sparkle.key === key) return sparkle;
+  sparkle = null; // the old one goes before the new one is made
+  const N = SIZE * SIZE, a = new Uint8Array(N), b = new Uint8Array(N).fill(255), n = new Uint8Array(N);
+  if (kind === 'flake') {
+    const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
+    const k = (p.contrast ?? 100) / 100;
     // sparkle speckle: random pixels spike metallic and drop roughness
     const density = Math.max(0.01, (p.density ?? 18) / 100);
     const thr = 1 - density;
-    const lid = light.getContext('2d').createImageData(SIZE, SIZE), ld = lid.data;
-    for (let i = 0; i < d.length; i += 4) {
+    for (let i = 0; i < N; i++) {
       const f = rand();
       const s = (f > thr ? (f - thr) / density : 0) * k;
-      d[i]     = clamp255(p.met + (255 - p.met) * s);
-      d[i + 1] = clamp255(p.rough * (1 - 0.85 * s));
-      d[i + 2] = p.clear;
-      d[i + 3] = 255;
-      ld[i] = ld[i + 1] = ld[i + 2] = 255;
-      ld[i + 3] = clamp255(255 * s);
+      a[i] = Math.round(255 * s);
+      b[i] = Math.round(255 * (1 - 0.85 * s));
     }
-    light.getContext('2d').putImageData(lid, 0, 0);
-  } else if (key === 'glitter') {
-    // coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
-    // spikes metallic and carries its OWN roughness, so different chips
-    // catch the light at different angles — the tumbling-glitter look.
-    ctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-    const size = Math.max(2, Math.round(p.scale ?? 4));
-    const density = Math.max(1, Math.min(80, p.density ?? 30));
-    const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
-    const lctx = light.getContext('2d');
-    for (let i = 0; i < count; i++) {
-      const x = Math.floor(rand() * SIZE);
-      const y = Math.floor(rand() * SIZE);
-      const flash = rand() * k;                       // how hard this chip flashes
-      const met = clamp255(p.met + (255 - p.met) * (0.4 + 0.6 * flash));
-      const rough = clamp255(p.rough * (1 - 0.9 * flash) + rand() * 30);
-      const s = Math.max(1, Math.round(size * (0.7 + rand() * 0.6)));
-      ctx.fillStyle = `rgb(${met},${rough},${p.clear})`;
-      ctx.fillRect(x, y, s, s);
-      lctx.fillStyle = `rgba(255,255,255,${(0.4 + 0.6 * flash).toFixed(3)})`;
-      lctx.fillRect(x, y, s, s);
-    }
-    texCache.set(cacheKey, c);
-    return c; // drawn with fillRect — skip the ImageData path below
+  } else {
+    glitterChips(p, (x, y, s, flash, cn) => {
+      const ca = Math.round(255 * (0.4 + 0.6 * flash)), cb = Math.round(255 * (1 - 0.9 * flash));
+      for (let yy = y; yy < Math.min(SIZE, y + s); yy++) for (let xx = x; xx < Math.min(SIZE, x + s); xx++) {
+        const i = yy * SIZE + xx; a[i] = ca; b[i] = cb; n[i] = cn;
+      }
+    });
   }
-  ctx.putImageData(id, 0, 0);
-  texCache.set(cacheKey, c);
-  return c;
+  sparkle = { key, a, b, n, light: null };
+  return sparkle;
+}
+// The sparkle over a finish of these three numbers, written into the pixels of
+// ctx's box (x, y, w, h: sheet coordinates from ctx's own 0, 0) that are not
+// see-through; those keep their alpha.
+export function paintSparkle(ctx, kind, p, x, y, w, h) {
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.min(SIZE, Math.ceil(x + w), ctx.canvas.width) - x; h = Math.min(SIZE, Math.ceil(y + h), ctx.canvas.height) - y;
+  if (w <= 0 || h <= 0) return;
+  const { a, b, n } = sparklePattern(kind, p), img = ctx.getImageData(x, y, w, h), d = img.data;
+  for (let j = 0; j < h; j++) for (let i = 0, o = (j * w) * 4, q = (y + j) * SIZE + x; i < w; i++, o += 4, q++) {
+    if (!d[o + 3]) continue;
+    d[o] = p.met + (255 - p.met) * a[q] / 255;
+    d[o + 1] = clamp255(p.rough * b[q] / 255 + n[q]);
+    d[o + 2] = p.clear;
+  }
+  ctx.putImageData(img, x, y);
+}
+// How much each fleck lightens the paint under it at full Brightness (0 to
+// 255 a pixel): a fleck reads bright even with nothing to mirror. A fleck of
+// full mirror metal with nothing bright to reflect is otherwise a dark speck.
+// Flake's are its metal amounts; glitter's chips add up where they overlap.
+// Made only for a sparkle with Brightness.
+export function sparkleLights(kind, p) {
+  const pat = sparklePattern(kind, p);
+  if (kind !== 'glitter') return pat.a;
+  if (!pat.light) {
+    const l = new Uint8Array(SIZE * SIZE);
+    glitterChips(p, (x, y, s, flash) => {
+      const t = 1 - Math.round(255 * (0.4 + 0.6 * flash)) / 255;
+      for (let yy = y; yy < Math.min(SIZE, y + s); yy++) for (let xx = x; xx < Math.min(SIZE, x + s); xx++) {
+        const i = yy * SIZE + xx; l[i] = Math.round(255 - (255 - l[i]) * t);
+      }
+    });
+    pat.light = l;
+  }
+  return pat.light;
 }
 
 let nextId = 1;
@@ -728,9 +749,9 @@ scratch.width = scratch.height = SIZE;
 paintCanvas.getContext('2d', { willReadFrequently: true });
 scratch.getContext('2d', { willReadFrequently: true });
 specCanvas.getContext('2d', { willReadFrequently: true });
-// the shadow's own buffer: drawLayer is itself called with `scratch` as the target
-const fxScratch = document.createElement('canvas');
-fxScratch.width = fxScratch.height = SIZE;
+// the shadow's own buffer: drawLayer is itself called with `scratch` as the target.
+// Made when first needed: most liveries have no shadow
+let fxScratch = null;
 
 // the layer's own pixels, without opacity, trim or shadow
 function drawLayerContent(ctx, layer) {
@@ -810,6 +831,7 @@ export function drawLayer(ctx, layer, forSpec = false) {
   if (doShadow) {
     // the layer is drawn once into a buffer; drawn fully off-canvas from
     // there, only its shadow lands in view, beneath the layer itself
+    if (!fxScratch) { fxScratch = document.createElement('canvas'); fxScratch.width = fxScratch.height = SIZE; }
     const rctx = fxScratch.getContext('2d');
     rctx.clearRect(0, 0, SIZE, SIZE);
     drawCopies(rctx, layer);
@@ -849,18 +871,32 @@ function paintBase(ctx, doc) {
   ctx.fillStyle = doc.baseColor;
   ctx.fillRect(0, 0, SIZE, SIZE);
   const light = sparkleLight(doc.baseMaterial, doc.baseMatParams);
-  if (light) { ctx.save(); ctx.globalAlpha = light.amount; ctx.drawImage(light.canvas, 0, 0); ctx.restore(); }
+  if (light) lightenFlecks(ctx, light, { x: 0, y: 0, w: SIZE, h: SIZE }, null);
 }
 
 // A sparkle finish whose flecks also lighten the paint (params.bright, 0 to
-// 100): → { canvas, amount } to lay over that paint, or null.
+// 100): → { lights, amount } (see sparkleLights), or null.
 function sparkleLight(material, params) {
   const mat = MATERIALS[material];
   if (!mat || (mat.tex !== 'flake' && mat.tex !== 'glitter')) return null;
   const p = resolveParams(material, params), amount = Math.max(0, Math.min(1, (p.bright || 0) / 100));
-  return amount ? { canvas: specTexture(mat.tex, p).light, amount } : null;
+  return amount ? { lights: sparkleLights(mat.tex, p), amount } : null;
 }
-let lightScratch = null; // made when first needed: most liveries never do
+// White laid over the paint in box, as strong at each pixel as its fleck's
+// light times amount times mask (the layer's own alpha there, box-sized; null:
+// everywhere), mixed as drawing it would
+function lightenFlecks(ctx, { lights, amount }, box, mask) {
+  if (box.w <= 0 || box.h <= 0) return;
+  const img = ctx.getImageData(box.x, box.y, box.w, box.h), d = img.data;
+  for (let j = 0, o = 0; j < box.h; j++) for (let i = 0, q = (box.y + j) * SIZE + box.x; i < box.w; i++, o += 4, q++) {
+    const al = lights[q] / 255 * amount * (mask ? mask[o + 3] / 255 : 1);
+    if (!al) continue;
+    const da = d[o + 3] / 255, k = da * (1 - al), oa = al + k;
+    d[o] = (255 * al + d[o] * k) / oa; d[o + 1] = (255 * al + d[o + 1] * k) / oa; d[o + 2] = (255 * al + d[o + 2] * k) / oa;
+    d[o + 3] = oa * 255;
+  }
+  ctx.putImageData(img, box.x, box.y);
+}
 
 // ---------- soft edges mixed in linear light ----------
 // A shape's edge is smoothed by mixing its colour with what is underneath in
@@ -888,16 +924,35 @@ function edgesInLinear(layer) {
 function paintBox(layer) {
   let x0 = 0, y0 = 0, x1 = SIZE, y1 = SIZE;
   const fx = layer.fx;
+  const k = layer.carry;
   if (!(fx && fx.shadow > 0) && !layer.repeat) { // a shadow, or copies, fall outside the layer's own box
     try {
-      const k = layer.carry;
       const cs = layerCorners(layer).map(q => (k ? { x: k.a * q.x + k.c * q.y + k.e, y: k.b * q.x + k.d * q.y + k.f } : q));
       const xs = cs.map(q => q.x), ys = cs.map(q => q.y);
       x0 = Math.max(0, Math.floor(Math.min(...xs)) - 3); y0 = Math.max(0, Math.floor(Math.min(...ys)) - 3);
       x1 = Math.min(SIZE, Math.ceil(Math.max(...xs)) + 3); y1 = Math.min(SIZE, Math.ceil(Math.max(...ys)) + 3);
     } catch { /* no box to be had: the whole sheet */ }
+  } else if (!(fx && fx.shadow > 0) && !k) {
+    // copies: round each copy's middle, as far as the layer (or another of
+    // its outlines, or a copy grown by Random size) can reach at any turn.
+    // A whole-sheet box made every accurate redraw of a Repeat read the whole sheet back twice
+    try {
+      const { cx, cy, W, H, list } = repeatOffsets(layer), r = layer.repeat;
+      const cs = isRegionLayer(layer) ? null : layerCorners(layer), own = cs ? Math.hypot(cs[0].x - cs[2].x, cs[0].y - cs[2].y) : Math.hypot(layer.rw, layer.rh);
+      const reach = Math.max(own, Math.hypot(W, H)) / 2 * (1 + 0.75 * (r.rSize || 0) / 100) + 3;
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (const o of list) { a = Math.min(a, cx + o.x); b = Math.min(b, cy + o.y); c = Math.max(c, cx + o.x); d = Math.max(d, cy + o.y); }
+      if (list.length) { x0 = Math.max(0, Math.floor(a - reach)); y0 = Math.max(0, Math.floor(b - reach)); x1 = Math.min(SIZE, Math.ceil(c + reach)); y1 = Math.min(SIZE, Math.ceil(d + reach)); }
+    } catch { /* no box to be had: the whole sheet */ }
   }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  // nothing shows outside its trim, shadow included
+  const windows = k ? k.clip : clipPolys(layer);
+  if (windows.length) {
+    const all = windows.flat();
+    x0 = Math.max(x0, Math.floor(Math.min(...all.map(q => q.x))) - 1); y0 = Math.max(y0, Math.floor(Math.min(...all.map(q => q.y))) - 1);
+    x1 = Math.min(x1, Math.ceil(Math.max(...all.map(q => q.x))) + 1); y1 = Math.min(y1, Math.ceil(Math.max(...all.map(q => q.y))) + 1);
+  }
+  return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
 }
 
 // src (the layer, alone on a clear canvas) laid over ctx within box. Solid
@@ -934,17 +989,13 @@ function paintLayerInto(ctx, layer) {
   paintLayerPaint(ctx, layer);
   const light = sparkleLight(layer.material, layer.matParams);
   if (!light) return;
-  // the flecks, only where the layer is: its own pixels say where
-  if (!lightScratch) { lightScratch = document.createElement('canvas'); lightScratch.width = lightScratch.height = SIZE; }
-  const sctx = lightScratch.getContext('2d');
-  sctx.clearRect(0, 0, SIZE, SIZE);
+  // the flecks, only where the layer is: its own pixels, drawn alone on the
+  // scratch (free again once the layer is painted), say where
+  const box = paintBox(layer), sctx = scratch.getContext('2d');
+  sctx.clearRect(box.x, box.y, box.w, box.h);
   drawLayer(sctx, layer, false);
-  sctx.save();
-  sctx.globalCompositeOperation = 'source-in';
-  sctx.globalAlpha = light.amount;
-  sctx.drawImage(light.canvas, 0, 0);
-  sctx.restore();
-  ctx.drawImage(lightScratch, 0, 0);
+  if (box.w > 0 && box.h > 0) lightenFlecks(ctx, light, box, sctx.getImageData(box.x, box.y, box.w, box.h).data);
+  sctx.clearRect(0, 0, SIZE, SIZE);
 }
 function paintLayerPaint(ctx, layer) {
   if (linearEdges && edgesInLinear(layer)) {
@@ -996,12 +1047,13 @@ export function renderPaint(doc, { linearEdges: lin = false } = {}) {
 // the whole stack. Returns null (caller falls back to renderPaint) when the
 // moving layers aren't a contiguous run of the paint-visible stack.
 
-const dragBelow = document.createElement('canvas');
-dragBelow.width = dragBelow.height = SIZE;
-const dragAbove = document.createElement('canvas');
-dragAbove.width = dragAbove.height = SIZE;
-dragBelow.getContext('2d', { willReadFrequently: true }); // (they are mixed into by the same reads)
-dragAbove.getContext('2d', { willReadFrequently: true });
+// The slabs are made for each drag and go with the cache once it is let go (32 MB).
+const slab = () => {
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  c.getContext('2d', { willReadFrequently: true }); // (they are mixed into by the same reads)
+  return c;
+};
 
 export function buildDragCache(doc, movingIds) {
   const idxs = [];
@@ -1013,31 +1065,32 @@ export function buildDragCache(doc, movingIds) {
     if (!movingIds.has(l.id) && inPaintMap(l)) return null; // static layer interleaved
   }
 
-  const bctx = dragBelow.getContext('2d');
+  const below = slab(), above = slab();
+  const bctx = below.getContext('2d');
   bctx.clearRect(0, 0, SIZE, SIZE);
   paintBase(bctx, doc);
   paintSwatches(bctx, doc, true);
   for (let i = 0; i < lo; i++) {
     if (inPaintMap(doc.layers[i])) paintLayerInto(bctx, doc.layers[i]);
   }
-  const actx = dragAbove.getContext('2d');
+  const actx = above.getContext('2d');
   actx.clearRect(0, 0, SIZE, SIZE);
   for (let i = hi + 1; i < doc.layers.length; i++) {
     if (doc.layers[i].blend) return null; // a blend above needs what is under it: no shortcut
     if (inPaintMap(doc.layers[i])) paintLayerInto(actx, doc.layers[i]);
   }
   paintSwatches(actx, doc);
-  return { movingIds };
+  return { movingIds, below, above };
 }
 
 export function renderPaintWithDrag(doc, cache) {
   const ctx = paintCanvas.getContext('2d');
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.drawImage(dragBelow, 0, 0);
+  ctx.drawImage(cache.below, 0, 0);
   for (const layer of doc.layers) {
     if (cache.movingIds.has(layer.id) && inPaintMap(layer)) paintLayerInto(ctx, layer);
   }
-  ctx.drawImage(dragAbove, 0, 0);
+  ctx.drawImage(cache.above, 0, 0);
   return paintCanvas;
 }
 
@@ -1059,12 +1112,9 @@ export function renderSpec(doc) {
   const base = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
   const baseP = resolveParams(doc.baseMaterial, doc.baseMatParams);
   ctx.clearRect(0, 0, SIZE, SIZE);
-  if (base.tex) {
-    ctx.drawImage(specTexture(base.tex, baseP), 0, 0);
-  } else {
-    ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-  }
+  ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (base.tex) paintSparkle(ctx, base.tex, baseP, 0, 0, SIZE, SIZE);
 
   // Layers are stamped in runs: neighbours in the stack that carry the very
   // same finish go down as one silhouette, filled once. A livery of many
@@ -1097,13 +1147,10 @@ export function renderSpec(doc) {
     sctx.globalCompositeOperation = 'source-in';
     // only inside the box: outside it there is nothing of this run to fill
     sctx.beginPath(); sctx.rect(x0, y0, w, h); sctx.clip();
-    if (mat.tex) {
-      sctx.drawImage(specTexture(mat.tex, p), 0, 0);
-    } else {
-      sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-      sctx.fillRect(x0, y0, w, h);
-    }
+    sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+    sctx.fillRect(x0, y0, w, h);
     sctx.restore();
+    if (mat.tex) paintSparkle(sctx, mat.tex, p, x0, y0, w, h);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
     sctx.clearRect(x0, y0, w, h); // left clean for the next run
   }
@@ -1264,15 +1311,17 @@ function shapePts(pts) {
 // A picture already loaded is handed back, not decoded again: every undo and
 // redo reloads the whole livery, and its template alone is 16 MB decoded, with
 // more made from it (the line overlays are kept by which picture they came
-// from). The last 60 different pictures are kept.
-const imageCache = new Map(); // src → promise of its image, oldest first
+// from). Only pictures still in use are kept: one no layer holds any more (a
+// deleted logo) is let go, and decoded again from its saved copy if an undo
+// brings it back.
+const imageCache = new Map(); // src → promise while it decodes, then a WeakRef to the image
 export function loadImage(src) {
+  for (const [k, v] of imageCache) if (v instanceof WeakRef && !v.deref()) imageCache.delete(k);
   const had = imageCache.get(src);
-  if (had) { imageCache.delete(src); imageCache.set(src, had); return had; } // used again: it moves to the newest end
+  if (had) return had instanceof WeakRef ? Promise.resolve(had.deref()) : had;
   const made = decodeImage(src);
   imageCache.set(src, made);
-  made.catch(() => imageCache.delete(src));
-  if (imageCache.size > 60) imageCache.delete(imageCache.keys().next().value);
+  made.then((img) => imageCache.set(src, new WeakRef(img)), () => imageCache.delete(src));
   return made;
 }
 function decodeImage(src) {
@@ -1305,11 +1354,8 @@ export async function deserializeDoc(data) {
   doc.baseColor = data.baseColor || doc.baseColor;
   doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
   doc.baseMatParams = data.baseMatParams || null;
-  if (data.template) {
-    try {
-      doc.template = { img: await loadImage(data.template), src: data.template };
-    } catch { /* template image failed — drop it */ }
-  }
+  // decoded only when its lines are drawn, and let go again after (app.js templateLines)
+  if (typeof data.template === 'string' && data.template) doc.template = { img: null, src: data.template };
   if (data.regionMap) {
     try {
       doc.regionMap = parseRegionMap(data.regionMap);

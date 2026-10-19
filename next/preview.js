@@ -8,7 +8,7 @@
 // The shading is the original screen's shader ball, on a different shape, plus
 // a soft horizon for metal to mirror.
 
-import { MATERIALS, specTexture, resolveParams } from '../js/engine.js';
+import { SIZE, MATERIALS, paintSparkle, sparkleLights, resolveParams } from '../js/engine.js';
 import { hexToRgb } from './picker.js';
 
 const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
@@ -26,13 +26,9 @@ export function renderTile(canvas, material, params, colour) {
   const sc = document.createElement('canvas');
   sc.width = W; sc.height = Ht;
   const sctx = sc.getContext('2d', { willReadFrequently: true });
-  if (MATERIALS[key].tex) {
-    sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(specTexture(MATERIALS[key].tex, p), 0, 0, W, Ht, 0, 0, W, Ht); // a 1:1 crop: the grain at its real size
-  } else {
-    sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
-    sctx.fillRect(0, 0, W, Ht);
-  }
+  sctx.fillStyle = `rgb(${p.met},${p.rough},${p.clear})`;
+  sctx.fillRect(0, 0, W, Ht);
+  if (MATERIALS[key].tex) paintSparkle(sctx, MATERIALS[key].tex, p, 0, 0, W, Ht); // a 1:1 crop: the grain at its real size
   const spec = sctx.getImageData(0, 0, W, Ht).data;
   const rgb = (c) => hexToRgb(c).map(v => v / 255);
   // the paint colour of each column of the tile
@@ -46,11 +42,7 @@ export function renderTile(canvas, material, params, colour) {
   });
   // Sparkle with Brightness: each fleck lightens the paint under it by this much (0 to 1), per pixel
   let lit = null;
-  if (MATERIALS[key].tex && p.bright > 0 && specTexture(MATERIALS[key].tex, p).light) {
-    sctx.clearRect(0, 0, W, Ht);
-    sctx.drawImage(specTexture(MATERIALS[key].tex, p).light, 0, 0, W, Ht, 0, 0, W, Ht);
-    lit = sctx.getImageData(0, 0, W, Ht).data;
-  }
+  if (MATERIALS[key].tex && p.bright > 0) lit = sparkleLights(MATERIALS[key].tex, p); // by the pixel on the sheet: the tile is its top left corner
   const out = ctx.createImageData(W, Ht), d = out.data;
   const rad = Ht * 0.2; // corner radius
   for (let y = 0; y < Ht; y++) {
@@ -64,7 +56,7 @@ export function renderTile(canvas, material, params, colour) {
       const nx = (x + 0.5 - W / 2) / (W / 2) * 0.62, ny = (y + 0.5 - Ht / 2) / (Ht / 2) * 0.62;
       const nz = Math.sqrt(1 - nx * nx - ny * ny);
       const metallic = spec[i] / 255, roughness = spec[i + 1] / 255, clearcoat = spec[i + 2] / 255;
-      const base = cols[x], lift = lit ? lit[i + 3] / 255 * p.bright / 100 : 0, alb = lift ? base.map(a => a + (1 - a) * lift) : base;
+      const base = cols[x], lift = lit ? lit[y * SIZE + x] / 255 * p.bright / 100 : 0, alb = lift ? base.map(a => a + (1 - a) * lift) : base;
       const shininess = 4 + 252 * (1 - roughness) * (1 - roughness);
       const specCol = alb.map(a => 1 + (a - 1) * metallic);
       let r = 0, g = 0, b = 0;

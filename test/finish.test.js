@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 globalThis.document = {
   createElement: () => ({ width: 0, height: 0, getContext: () => null }),
 };
-const { finishSpec, baseSpec, layerColour, withFinishes, setRule, clearRule, finishList, ruleFor, readFinish, writeFinish, finishLabel, presetOf, SPARKLE } = await import('../js/finish.js');
+const { finishSpec, baseSpec, layerColour, withFinishes, setRule, clearRule, finishList, ruleFor, readFinish, writeFinish, finishLabel, presetOf, SPARKLE, oneSparkle, liverySparkle } = await import('../js/finish.js');
 const finishOf = (doc, layer) => finishSpec(doc, layer).material;
 const baseFinish = (doc) => baseSpec(doc).material;
 const { createDoc, createFillLayer, serializeDoc, deserializeDoc, cleanFinishRules } = await import('../js/engine.js');
@@ -183,4 +183,18 @@ test('a car gradient has a finish of its own, not its first colour\'s', () => {
   assert.deepEqual(list.at(-1), { kind: 'layer', id: g.id, name: 'Car gradient', material: 'gloss', params: null });
   setRule(d, '#111214', 'matte');
   assert.equal(finishOf(d, g), 'gloss');
+});
+
+test('the livery has one sparkle: every sparkly finish takes the first one, each keeping its own three numbers', () => {
+  const d = doc();
+  const [a, b, c] = d.layers;
+  ({ material: b.material, params: b.matParams } = writeFinish({ met: 255, rough: 10, clear: 255, sparkle: { amount: 40, size: 6, strength: 100, bright: 0 } }));
+  ({ material: a.material, params: a.matParams } = writeFinish({ met: 0, rough: 230, clear: 60, sparkle: { amount: 10, size: 1, strength: 80, bright: 20 } }));
+  setRule(d, '#d7263d', ...Object.values(writeFinish({ met: 180, rough: 70, clear: 255, sparkle: { amount: 55, size: 3, strength: 50, bright: 90 } })));
+  oneSparkle(d);
+  const want = { amount: 10, size: 1, strength: 80, bright: 20 };
+  assert.deepEqual(liverySparkle(d), want);
+  assert.deepEqual(readFinish(b.material, b.matParams), { met: 255, rough: 10, clear: 255, sparkle: want });
+  assert.deepEqual(readFinish(d.finishRules[0].material, d.finishRules[0].params).sparkle, want);
+  assert.equal(readFinish(c.material, c.matParams).sparkle, null); // no sparkle stays none
 });

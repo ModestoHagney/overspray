@@ -24,7 +24,7 @@ import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasA
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage } from '../js/trace.js';
-import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE } from '../js/finish.js';
+import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
@@ -94,23 +94,45 @@ const luminance = (hex) => {
 // the doc (the original screen's per-project opacity suited its dark canvas)
 // The template's lines for the screen, as two pictures in a tone that reads
 // against the base coat: the panel lines (strong ink in the template picture,
-// thickened a little) and the mesh (faint ink; see js/template.js). Rebuilt
-// only when the template or the tone changes.
-let lineCache = { img: null, dark: null, borders: null, mesh: null };
+// thickened a little) and the mesh (faint ink; see js/template.js). Each is
+// made only while it is switched on, and the template picture is let go once
+// they are made (16 MB decoded): it is decoded again only to make one that was
+// off. A new tone recolours them in place.
+let lineCache = { src: null, dark: null, borders: null, mesh: null };
+let lineLoad = null; // the template being decoded for them
 function templateLines(doc) {
-  const img = doc.template.img, dark = luminance(doc.baseColor) > 0.5;
-  if (lineCache.img === img && lineCache.dark === dark) return lineCache;
-  const w = img.width, h = img.height;
+  const t = doc.template, dark = luminance(doc.baseColor) > 0.5, tone = dark ? '#101114' : '#ffffff';
+  if (lineCache.src !== t.src) lineCache = { src: t.src, dark, borders: null, mesh: null };
+  if (!app.show.lines) lineCache.borders = null;
+  if (!app.show.mesh) lineCache.mesh = null;
+  if (lineCache.dark !== dark) {
+    for (const c of [lineCache.borders, lineCache.mesh]) {
+      if (!c) continue;
+      const g = c.getContext('2d');
+      g.globalCompositeOperation = 'source-in'; g.fillStyle = tone; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'source-over';
+    }
+    lineCache.dark = dark;
+  }
+  const want = { borders: app.show.lines && !lineCache.borders, mesh: app.show.mesh && !lineCache.mesh };
+  if (!want.borders && !want.mesh) return lineCache;
+  if (!t.img) {
+    if (lineLoad !== t.src) {
+      const src = lineLoad = t.src;
+      loadImage(src).then((img) => { if (app.doc.template && app.doc.template.src === src) { app.doc.template.img = img; lineLoad = null; requestDraw(); } }, () => { /* left without lines; not tried again */ });
+    }
+    return lineCache;
+  }
+  const img = t.img, w = img.width, h = img.height;
   const read = document.createElement('canvas');
   read.width = w; read.height = h;
   const rctx = read.getContext('2d', { willReadFrequently: true });
   rctx.drawImage(img, 0, 0);
   const src = rctx.getImageData(0, 0, w, h).data;
-  const B = new ImageData(w, h), M = new ImageData(w, h), tone = dark ? [16, 17, 20] : [255, 255, 255];
+  const B = want.borders ? new ImageData(w, h) : null, M = want.mesh ? new ImageData(w, h) : null, rgb = dark ? [16, 17, 20] : [255, 255, 255];
   for (let i = 0; i < src.length; i += 4) {
     const ink = (255 - Math.min(src[i], src[i + 1], src[i + 2])) * (src[i + 3] / 255); // how far from white
-    const to = ink >= 200 ? B.data : ink >= 40 ? M.data : null;
-    if (to) { to[i] = tone[0]; to[i + 1] = tone[1]; to[i + 2] = tone[2]; to[i + 3] = 255; }
+    const to = ink >= 200 ? B : ink >= 40 ? M : null;
+    if (to) { to.data[i] = rgb[0]; to.data[i + 1] = rgb[1]; to.data[i + 2] = rgb[2]; to.data[i + 3] = 255; }
   }
   const canvas = (data, bold) => {
     const c = document.createElement('canvas');
@@ -124,7 +146,9 @@ function templateLines(doc) {
     for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) og.drawImage(c, dx, dy);
     return out;
   };
-  lineCache = { img, dark, borders: canvas(B, true), mesh: canvas(M, false) };
+  if (B) lineCache.borders = canvas(B, true);
+  if (M) lineCache.mesh = canvas(M, false);
+  t.img = null;
   return lineCache;
 }
 function newDoc() {
@@ -267,10 +291,10 @@ function draw() {
   ctx.restore();
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(composite, 0, 0);
-  if (doc.template && (app.show.lines || app.show.mesh)) {
+  if (doc.template) { // (called with both off too: that lets their pictures go)
     const L = templateLines(doc);
-    if (app.show.mesh) { ctx.globalAlpha = 0.3; ctx.drawImage(L.mesh, 0, 0, SIZE, SIZE); }
-    if (app.show.lines) { ctx.globalAlpha = 0.85; ctx.drawImage(L.borders, 0, 0, SIZE, SIZE); }
+    if (app.show.mesh && L.mesh) { ctx.globalAlpha = 0.3; ctx.drawImage(L.mesh, 0, 0, SIZE, SIZE); }
+    if (app.show.lines && L.borders) { ctx.globalAlpha = 0.85; ctx.drawImage(L.borders, 0, 0, SIZE, SIZE); }
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -457,6 +481,7 @@ function onBoard() {
 }
 function change({ panels = true, now = false } = {}) {
   skipCapture = false; // a real edit after an undo is recorded
+  oneSparkle(app.doc); // a layer pasted or brought in with another sparkle takes the livery's
   clearTimeout(quickTimer);
   quick = !panels && !now; // a drag, a slider, a nudge: more of the same is coming
   if (quick) quickTimer = setTimeout(settle, 160);
@@ -647,6 +672,7 @@ async function setDoc(doc, projectId) {
   app.piece = app.centreFor = null;
   app.trimming = false;
   app.doc = doc;
+  oneSparkle(doc); // an older livery could have a different sparkle on each layer: they all take the first one's
   app.projectId = projectId;
   app.sel = 'base';
   lastJson = null;
@@ -1100,11 +1126,13 @@ const actions = {
     const now = actions.finishNow();
     if (!now) return;
     const f = readFinish(now.material, now.params);
-    if (part === 'sparkle') f.sparkle = value ? { ...SPARKLE } : null;
-    else if (part === 'amount' || part === 'size' || part === 'strength' || part === 'bright') { if (!f.sparkle) return; f.sparkle[part] = value; }
+    const all = part === 'amount' || part === 'size' || part === 'strength' || part === 'bright';
+    if (part === 'sparkle') f.sparkle = value ? { ...(liverySparkle(app.doc) || SPARKLE) } : null; // switched on: the livery's sparkle
+    else if (all) { if (!f.sparkle) return; f.sparkle[part] = value; }
     else f[part] = value;
     // it keeps the name of the finish it started from while its numbers are moved
     if (!actions.applyFinish(writeFinish(f, presetOf(readFinish(now.material, now.params)) || now.material))) return;
+    if (all) oneSparkle(app.doc, f.sparkle); // one sparkle for the whole livery: every sparkly finish moves with it
     change(part === 'sparkle' ? { now: true } : { panels: false });
   },
   // the finish something else in the livery has, taken over whole. from: 'colour:#rrggbb' | 'layer:id' | 'area:id'
@@ -2053,7 +2081,21 @@ const actions = {
   },
   // keep: remember it in the library (not for the built-in graphics, which are there already)
   async addImage(src, name, at, keep = true) {
-    const l = createImageLayer(await loadImage(src), src, name || 'Picture');
+    let img = await loadImage(src);
+    // A picture bigger than the sheet is brought down to it: it is never shown
+    // larger on the car, and kept at full size it filled memory, the saved
+    // livery, every undo step and the library (a 4000px logo is 64 MB decoded)
+    const k = SIZE / Math.max(img.width, img.height);
+    if (k < 1) try {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, c.width, c.height);
+      src = /^data:image\/jpeg/i.test(src) ? c.toDataURL('image/jpeg', 0.92) : c.toDataURL('image/png'); // a photo stays a JPEG: as a PNG it would be several times the size
+      img = await loadImage(src);
+    } catch { /* one that cannot be read back (from another site) is kept as it is */ }
+    const l = createImageLayer(img, src, name || 'Picture');
     if (keep && !library.logos.some(x => x.src === src)) {
       library.logos.unshift({ id: 'g' + newId(), name: name || 'Picture', src });
       library.logos.length = Math.min(library.logos.length, 80); // ponytail: the oldest fall off; add folders if 80 is ever tight
@@ -2620,6 +2662,7 @@ async function boot() {
     const json = await persist.loadBlob('next-autosave');
     if (json) {
       app.doc = await deserializeDoc(JSON.parse(json));
+      oneSparkle(app.doc);
       app.projectId = (await persist.loadSetting('next-project').catch(() => null)) || null;
       lastJson = json;
     }
