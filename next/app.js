@@ -2182,7 +2182,7 @@ const actions = {
       for (const e of layers) {
         const src = e.canvas.toDataURL('image/png');
         const l = createImageLayer(await loadImage(src), src, e.name);
-        Object.assign(l, { x: e.x, y: e.y, scale: e.scale, scaleY: e.scaleY, opacity: e.opacity, blend: e.blend });
+        Object.assign(l, { x: e.x, y: e.y, scale: e.scale, scaleY: e.scaleY, opacity: e.opacity, blend: e.blend, visible: e.visible });
         if (e.group) groups.set(e.group, [...(groups.get(e.group) || []), l]);
         made.push(l);
       }
@@ -2197,8 +2197,8 @@ const actions = {
       actions.setTool('select');
       app.sel = made[made.length - 1].id;
       change({ now: true });
-      const notes = [lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
-      ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), notes.length > 0);
+      const notes = [lost.hidden && `${lost.hidden} turned off, as they were in the PSD`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), !!(lost.fx || lost.blend || lost.text)); // turned off is not a loss
     } catch (err) {
       ui.say('Could not read the layers in that PSD: ' + (err.message || 'unknown error'), true);
     }

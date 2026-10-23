@@ -227,12 +227,15 @@ export async function psdToTemplate(arrayBuffer) {
 }
 
 // ---------- a livery PSD as layers ----------
-// Someone's finished livery in Photoshop, as picture layers: every visible
-// pixel layer, in order, with its opacity, its layer mask and its clipping
+// Someone's finished livery in Photoshop, as picture layers: every pixel
+// layer, in order (hidden ones come in hidden: a layer left on or off by
+// mistake can then be put right here), with its opacity, its layer mask and its clipping
 // baked into its pixels. The kit's own helper layers are left out (Overspray
 // makes the pit box and pitboard itself), and so is the spec map.
 const SKIP_GROUP_RE = /turn\s*off|spec\s*map/i;
 const SKIP_LAYER_RE = /pit\s*box|pit\s*board|^(wire|mask)$|(sponsor|number)\s*blocks|car[\s_]*mandatory/i;
+// hidden kit extras, as a template import leaves them: the pattern library and alt-series decals
+const KIT_HIDDEN_RE = /car\s*patterns?|decal|logos?\b/i;
 
 // a layer's pixels with its mask's grey as their alpha
 function masked(c, l, m) {
@@ -265,34 +268,37 @@ function clipped(c, l, base) {
 }
 
 // → { layers: [{ name, canvas, x, y, scale, scaleY, opacity, blend, group }]
-//     bottom first, x/y the centre in 2048-sheet space; group: the PSD group
+//     bottom first, x/y the centre in 2048-sheet space, visible as in the PSD; group: the PSD group
 //     it was in (not the kit's "Paintable Area"), or null,
-//     lost: { fx, blend, text }: how many came in without effects, with a
-//     blend Overspray does not have (as normal), or as a picture of their text },
+//     lost: { fx, blend, text, hidden }: how many came in without effects, with a
+//     blend Overspray does not have (as normal), as a picture of their text, or turned off },
 //     kit: it has the kit's wireframe, so it can be the template too }
 export async function psdToLayers(arrayBuffer) {
   const agPsd = await loadAgPsd();
   const psd = agPsd.readPsd(arrayBuffer);
   const kx = SIZE / psd.width, ky = SIZE / psd.height;
-  const layers = [], lost = { fx: 0, blend: 0, text: 0 };
-  const walk = (children, group, opacity) => {
-    let base = null; // what a clipping layer clips to: { canvas, left, top }, or 'off' when it is not shown
+  const layers = [], lost = { fx: 0, blend: 0, text: 0, hidden: 0 };
+  const walk = (children, group, opacity, off) => {
+    let base = null; // what a clipping layer clips to: { canvas, left, top, hidden }, or 'off' when it was left out
     for (const l of children || []) {
       const name = l.name || '';
+      const hidden = off || !!l.hidden;
       if (!l.clipping) base = 'off';
-      if (l.hidden || (l.clipping && base === 'off')) continue;
+      if (l.clipping && base === 'off') continue;
       if (l.children) {
         base = null; // what clips to a group comes in unclipped
-        if (!SKIP_GROUP_RE.test(name)) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1));
+        if (!SKIP_GROUP_RE.test(name) && !(hidden && KIT_HIDDEN_RE.test(name))) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1), hidden);
         continue;
       }
-      if (!l.canvas || SKIP_LAYER_RE.test(name)) continue;
+      if (!l.canvas || SKIP_LAYER_RE.test(name) || (hidden && KIT_HIDDEN_RE.test(name))) continue;
       let c = l.canvas;
       if (l.mask && !l.mask.disabled && l.mask.canvas) c = masked(c, l, l.mask);
       if (l.clipping && base) c = clipped(c, l, base);
-      else base = { canvas: c, left: l.left || 0, top: l.top || 0 };
+      else base = { canvas: c, left: l.left || 0, top: l.top || 0, hidden };
+      const shown = !hidden && !(l.clipping && base && base.hidden); // clipped to a hidden layer: hidden with it
       if (l.effects && !l.effects.disabled) lost.fx++;
       if (l.text) lost.text++;
+      if (!shown) lost.hidden++;
       const blend = l.blendMode === 'multiply' ? 'multiply' : null;
       if (!blend && l.blendMode && l.blendMode !== 'normal') lost.blend++;
       const x = ((l.left || 0) + c.width / 2) * kx, y = ((l.top || 0) + c.height / 2) * ky;
@@ -305,10 +311,10 @@ export async function psdToLayers(arrayBuffer) {
         g.drawImage(c, 0, 0, s.width, s.height);
         c = s; scale = 1; scaleY = null;
       }
-      layers.push({ name: name || 'Layer', canvas: c, x, y, scale, scaleY, opacity: opacity * (l.opacity ?? 1), blend, group });
+      layers.push({ name: name || 'Layer', canvas: c, x, y, scale, scaleY, opacity: opacity * (l.opacity ?? 1), blend, group, visible: shown });
     }
   };
-  walk(psd.children, null, 1);
+  walk(psd.children, null, 1, false);
   const all = [];
   collectLayers(psd.children, false, false, all);
   return { layers, lost, kit: all.some(e => e.matched) };
