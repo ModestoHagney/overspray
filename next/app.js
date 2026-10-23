@@ -16,6 +16,7 @@ import {
 import { canvasToTGA, decodeTGA } from '../js/tga.js';
 import * as persist from '../js/persist.js';
 import { loadTemplate } from '../js/template.js';
+import { psdToLayers } from '../js/psd.js';
 import { saveToIracing, paintFilenames, validCustid, exportPaintCanvas, paintsDir, carFolders, isPaintsFolder, matchCar } from '../js/iracing.js';
 import { initUI } from './ui.js';
 import * as maplib from './maplib.js';
@@ -2115,6 +2116,7 @@ const actions = {
   // and the template lines go over it. Not kept in the library: it is big.
   pickPaint: () => $('file-paint').click(),
   async importPaint(file) {
+    if (/\.psd$/i.test(file.name)) return actions.importPsd(file);
     ui.say('Reading paint…');
     try {
       let src;
@@ -2151,8 +2153,54 @@ const actions = {
       app.sel = l.id;
       change({ now: true });
       ui.say(img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`);
+      // asked (one of the few popups): each flat colour as a shape, so finishes can go by colour
+      if (!await ui.ask({ title: 'Split the paint into colours?', body: 'Each flat colour becomes a shape, so finishes can be set by colour. Fine detail and fades come out rougher. Make shapes in Properties does this later too.', ok: 'Split colours', cancel: 'Keep as one picture' })) return;
+      if (!app.doc.layers.includes(l)) return;
+      // Make shapes leaves the background out (right for a logo); on a paint it is the base coat, so the base coat takes it
+      const g = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const corners = [[0, 0], [img.width - 1, 0], [0, img.height - 1], [img.width - 1, img.height - 1]].map(([x, y]) => { g.clearRect(0, 0, 1, 1); g.drawImage(img, x, y, 1, 1, 0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data.slice(0, 3)]; });
+      const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 24);
+      const bg = corners.find(c => corners.filter(o => near(c, o)).length >= 3);
+      if (bg) { app.doc.baseColor = '#' + bg.map(v => v.toString(16).padStart(2, '0')).join(''); app.doc.baseRef = null; }
+      app.sel = l.id; app.sels = [];
+      actions.makeShapes();
     } catch (err) {
       ui.say('Could not read that paint: ' + (err.message || 'unknown error'), true);
+    }
+  },
+
+  // A livery PSD as its layers (see psdToLayers), at the bottom like a flat
+  // paint. With no template yet, a PSD made from a kit is the template too.
+  async importPsd(file) {
+    const d = app.doc;
+    ui.say('Reading layers…');
+    try {
+      const { layers, lost, kit } = await psdToLayers(await file.arrayBuffer());
+      if (!d.template && kit) await actions.loadTemplateFile(file);
+      if (!layers.length) { ui.say('No visible layers to bring in from that PSD', true); return; }
+      const made = [], groups = new Map(); // PSD group name → its layers
+      for (const e of layers) {
+        const src = e.canvas.toDataURL('image/png');
+        const l = createImageLayer(await loadImage(src), src, e.name);
+        Object.assign(l, { x: e.x, y: e.y, scale: e.scale, scaleY: e.scaleY, opacity: e.opacity, blend: e.blend });
+        if (e.group) groups.set(e.group, [...(groups.get(e.group) || []), l]);
+        made.push(l);
+      }
+      for (const [name, ls] of groups) {
+        if (ls.length < 2) continue; // a group of one is just the layer
+        const id = 'g' + newId();
+        d.groups = [...(d.groups || []), { id, name, collapsed: true }];
+        for (const l of ls) l.groupId = id;
+      }
+      d.layers.unshift(...made);
+      if (app.mode !== 'paint') actions.setMode('paint');
+      actions.setTool('select');
+      app.sel = made[made.length - 1].id;
+      change({ now: true });
+      const notes = [lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), notes.length > 0);
+    } catch (err) {
+      ui.say('Could not read the layers in that PSD: ' + (err.message || 'unknown error'), true);
     }
   },
 
