@@ -24,7 +24,7 @@ import { hexToRgb } from './picker.js';
 import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasAim } from './tools.js';
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
-import { traceImage } from '../js/trace.js';
+import { traceImage, paintColours, specAreas } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
@@ -541,6 +541,44 @@ async function runSave() {
 // before Live is shown as paused; otherwise that change would never reach the
 // car until the next edit.
 const TRACE_PX = 1400; // Make shapes reads a picture no larger than this along its longer side: enough for a logo, and quick
+// a picture's pixels, brought down to no more than `max` along its longer side → { px, w, h, k (the scale) }
+function pixelsOf(src, max) {
+  const k = Math.min(1, max / Math.max(src.width, src.height)), w = Math.max(1, Math.round(src.width * k)), h = Math.max(1, Math.round(src.height * k));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(src, 0, 0, w, h);
+  return { px: g.getImageData(0, 0, w, h).data, w, h, k };
+}
+// The main colours of imported pictures saved as livery colours, so they are
+// in the colour list (see paintColours). pics: [{ name, src (an image or canvas), scale, scaleY }]. → how many
+function keepColours(pics) {
+  const d = app.doc;
+  const samples = pics.map(p => { const { px, w, h, k } = pixelsOf(p.src, 512); return { name: p.name, px, w, h, weight: p.scale * (p.scaleY ?? p.scale) / (k * k) }; });
+  const found = paintColours(samples, { total: SIZE * SIZE, have: d.palette.map(c => c.color) });
+  for (const c of found) d.palette.push({ id: 'c' + newId(), name: c.name || 'Colour ' + (d.palette.length + 1), color: c.color });
+  return found.length;
+}
+// A spec map (red, green, blue: metallic, roughness, clearcoat) as Spec areas
+// in a group on top: one over the whole sheet with its main finish, and one
+// for each other finish in it (see specAreas). → how many
+function specToAreas(src) {
+  const { px, w, h } = pixelsOf(src, TRACE_PX), got = specAreas(px, w, h);
+  if (!got) return 0;
+  const d = app.doc, gid = 'g' + newId(), kx = SIZE / w, ky = SIZE / h, r = (v) => Math.round(v * 100) / 100;
+  const area = (rgb, i) => {
+    const f = writeFinish({ met: rgb[0], rough: rgb[1], clear: rgb[2] });
+    return Object.assign(createFillLayer(d.baseColor), { name: 'Spec ' + i, specOnly: true, finishOwn: true, material: f.material, matParams: f.params, groupId: gid }); // the base coat's colour: no new colour in the colour list
+  };
+  const made = [Object.assign(area(got.base, 1), { rx: 0, ry: 0, rw: SIZE, rh: SIZE }), ...got.areas.map((a, i) => {
+    const s = area(a.rgb, i + 2);
+    s.shape = 'path';
+    setShape(s, shapeMapped(a.pts, (q) => ({ x: r(q.x * kx), y: r(q.y * ky) })));
+    return s;
+  })];
+  d.groups = [...(d.groups || []), { id: gid, name: 'Spec map', collapsed: true }];
+  d.layers.push(...made);
+  return made.length;
+}
 const LIVE_RETRIES = 5;
 let liveBusy = false, liveAgain = false, liveRetry = null;
 async function liveTick(attempt = 0) {
@@ -2148,11 +2186,12 @@ const actions = {
       l.scale = SIZE / img.width;
       l.scaleY = img.width === img.height ? null : SIZE / img.height;
       app.doc.layers.unshift(l);
+      const kept = keepColours([{ name: l.name, src: img, scale: l.scale, scaleY: l.scaleY }]);
       if (app.mode !== 'paint') actions.setMode('paint');
       actions.setTool('select');
       app.sel = l.id;
       change({ now: true });
-      ui.say(img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`);
+      ui.say((img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`) + (kept ? `, ${kept} colours saved to the colour list` : ''));
       // asked (one of the few popups): each flat colour as a shape, so finishes can go by colour
       if (!await ui.ask({ title: 'Split the paint into colours?', body: 'Each flat colour becomes a shape, so finishes can be set by colour. Fine detail and fades come out rougher. Make shapes in Properties does this later too.', ok: 'Split colours', cancel: 'Keep as one picture' })) return;
       if (!app.doc.layers.includes(l)) return;
@@ -2175,7 +2214,7 @@ const actions = {
     const d = app.doc;
     ui.say('Reading layers…');
     try {
-      const { layers, lost, kit } = await (/\.xcf$/i.test(file.name) ? xcfToLayers : psdToLayers)(await file.arrayBuffer());
+      const { layers, lost, kit, spec } = await (/\.xcf$/i.test(file.name) ? xcfToLayers : psdToLayers)(await file.arrayBuffer());
       if (!d.template && kit) await actions.loadTemplateFile(file);
       if (!layers.length) { ui.say('No layers to bring in from that file', true); return; }
       const made = [], groups = new Map(); // PSD group name → its layers
@@ -2193,11 +2232,14 @@ const actions = {
         for (const l of ls) l.groupId = id;
       }
       d.layers.unshift(...made);
+      // multiply layers (shading) are not colours of the livery
+      const kept = keepColours(layers.filter(e => e.visible && !e.blend).map(e => ({ name: e.name, src: e.canvas, scale: e.scale, scaleY: e.scaleY })));
+      const areas = spec ? specToAreas(spec) : 0;
       if (app.mode !== 'paint') actions.setMode('paint');
       actions.setTool('select');
       app.sel = made[made.length - 1].id;
       change({ now: true });
-      const notes = [lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the file`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      const notes = [kept && `${kept} colours saved to the colour list`, areas && `the spec map as ${areas} Spec areas`, lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the file`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
       ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), !!(lost.fx || lost.blend || lost.text)); // turned off is not a loss
     } catch (err) {
       ui.say('Could not read the layers in that file: ' + (err.message || 'unknown error'), true);

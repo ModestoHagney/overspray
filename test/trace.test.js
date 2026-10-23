@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { traceImage, flatColours, contours, simplify } from '../js/trace.js';
+import { traceImage, flatColours, contours, simplify, paintColours, specAreas } from '../js/trace.js';
 import { flatten, pieces as piecesOf } from '../js/shapes.js';
 
 // a picture as RGBA pixels, painted by f(x, y) → [r, g, b] or [r, g, b, a]
@@ -70,4 +70,22 @@ test('a mask: a solid background with a see-through cut-out gives the cut-out as
   // and a picture whose own background is see-through has no such thing: the hole in a ring stays a hole
   const ring = picture(40, 40, (x, y) => { const d = Math.hypot(x - 20, y - 20); return d < 15 && d >= 8 ? GREEN : [0, 0, 0, 0]; });
   assert.deepEqual(traceImage(ring, 40, 40).map((g) => g.color), ['#00703c']);
+});
+
+test('paint colours: the ones covering enough of the sheet, named after a one-colour picture, none already saved', () => {
+  const blue = { name: 'Blue', px: picture(20, 20, () => [0, 0, 255]), w: 20, h: 20, weight: 100 };
+  const mixed = { name: 'Logo', px: picture(20, 20, (x) => (x < 10 ? WHITE : x < 17 ? GREEN : CREAM)), w: 20, h: 20, weight: 50 };
+  const got = paintColours([blue, mixed], { total: 1e6 }); // the cream strip is under 0.5%
+  assert.deepEqual(got, [{ name: 'Blue', color: '#0000ff' }, { name: null, color: '#ffffff' }, { name: null, color: '#00703c' }]);
+  assert.deepEqual(paintColours([blue, mixed], { total: 1e6, have: ['#0000fe'] }).map((c) => c.color), ['#ffffff', '#00703c']);
+});
+
+test('a spec map: the corners give the base finish, each other finish is an area', () => {
+  const MATTE = [0, 204, 0], CHROME = [255, 0, 0];
+  const px = picture(40, 40, (x, y) => (x >= 10 && x < 30 && y >= 10 && y < 30 ? CHROME : MATTE));
+  const got = specAreas(px, 40, 40);
+  assert.deepEqual(got.base.map(Math.round), MATTE);
+  assert.equal(got.areas.length, 1);
+  assert.deepEqual(got.areas[0].rgb.map(Math.round), CHROME);
+  assert.ok(Math.abs(areaOf(got.areas[0].pts) - 400) < 20);
 });

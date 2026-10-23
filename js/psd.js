@@ -244,8 +244,9 @@ function templateOf(psd) {
 // layer, in order (hidden ones come in hidden: a layer left on or off by
 // mistake can then be put right here), with its opacity, its layer mask and its clipping
 // baked into its pixels. The kit's own helper layers are left out (Overspray
-// makes the pit box and pitboard itself), and so is the spec map.
-const SKIP_GROUP_RE = /turn\s*off|spec\s*map/i;
+// makes the pit box and pitboard itself). The spec map comes as one picture.
+const SKIP_GROUP_RE = /turn\s*off/i;
+const SPEC_RE = /spec\s*map/i; // the kit's "Custom Spec Map" group
 const PATTERN_RE = /car[\s_]*patterns?/i; // iRacing's stock designs (a group of them, or one): never painted in, so left out
 const SKIP_LAYER_RE = /pit\s*box|pit\s*board|^(wire|mask)$|(sponsor|number)\s*blocks|car[\s_]*mandatory/i;
 // hidden kit extras, as a template import leaves them: alt-series decals
@@ -289,7 +290,8 @@ function clipped(c, l, base) {
 //     lost: { fx, blend, text, hidden, patterns }: how many came in without effects, with a
 //     blend Overspray does not have (as normal), as a picture of their text, or turned off;
 //     patterns: a stock pattern that was showing was left out },
-//     kit: it has the kit's wireframe, so it can be the template too }
+//     kit: it has the kit's wireframe, so it can be the template too,
+//     spec: the spec map group's shown layers as one canvas the file's size, or null }
 export async function psdToLayers(arrayBuffer) {
   const agPsd = await loadAgPsd();
   return layersOf(agPsd.readPsd(arrayBuffer));
@@ -299,6 +301,7 @@ export async function xcfToLayers(buf) {
   return layersOf(withCanvases(await readXcf(buf, { keep: (n, up) => {
     let off = false;
     for (const g of [...up, n]) {
+      if (g !== n && SPEC_RE.test(g.name)) return !n.hidden; // the spec map is read, though its group is hidden
       off = off || g.hidden;
       if (PATTERN_RE.test(g.name) || leftOut(g.name, off, g !== n)) return false;
     }
@@ -309,6 +312,8 @@ function layersOf(psd) {
   const kx = SIZE / psd.width, ky = SIZE / psd.height;
   const layers = [], lost = { fx: 0, blend: 0, text: 0, hidden: 0, patterns: false };
   const shownIn = (ls) => ls.some(c => !c.hidden && (c.children ? shownIn(c.children) : true));
+  const showing = (ls) => ls.flatMap(c => c.hidden ? [] : c.children ? showing(c.children) : c.canvas ? [c] : []);
+  const specs = [];
   const walk = (children, group, opacity, off) => {
     let base = null; // what a clipping layer clips to: { canvas, left, top, hidden }, or 'off' when it was left out
     for (const l of children || []) {
@@ -317,6 +322,7 @@ function layersOf(psd) {
       if (!l.clipping) base = 'off';
       if (l.clipping && base === 'off') continue;
       if (PATTERN_RE.test(name)) { if (!hidden && shownIn([l])) lost.patterns = true; continue; }
+      if (l.children && SPEC_RE.test(name)) { specs.push(...showing(l.children)); continue; } // ponytail: masks and blends in it are not applied
       if (l.children) {
         base = null; // what clips to a group comes in unclipped
         if (!leftOut(name, hidden, true)) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1), hidden);
@@ -347,7 +353,14 @@ function layersOf(psd) {
     }
   };
   walk(psd.children, null, 1, false);
-  return { layers, lost, kit: hasWire(psd.children) };
+  let spec = null;
+  if (specs.length) {
+    spec = document.createElement('canvas');
+    spec.width = psd.width; spec.height = psd.height;
+    const g = spec.getContext('2d');
+    for (const l of specs) { g.globalAlpha = l.opacity ?? 1; g.drawImage(l.canvas, l.left || 0, l.top || 0); }
+  }
+  return { layers, lost, kit: hasWire(psd.children), spec };
 }
 
 // made from a kit: it has the kit's wireframe layer (named as collectLayers finds it)
