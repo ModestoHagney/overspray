@@ -13,7 +13,7 @@ import {
   createTextLayer, createImageLayer, createFillLayer, loadImage, registerCustomFont, paintLayers,
   MATERIALS, fadeStyleOf, cleanCredits, cleanRepeat, readPalettes,
 } from '../js/engine.js';
-import { canvasToTGA } from '../js/tga.js';
+import { canvasToTGA, decodeTGA } from '../js/tga.js';
 import * as persist from '../js/persist.js';
 import { loadTemplate } from '../js/template.js';
 import { saveToIracing, paintFilenames, validCustid, exportPaintCanvas, paintsDir, carFolders, isPaintsFolder, matchCar } from '../js/iracing.js';
@@ -2110,6 +2110,52 @@ const actions = {
     change({ now: true });
   },
 
+  // A finished paint (a TGA from the iRacing folder, or a PNG/JPG) as a
+  // picture layer stretched over the whole sheet, at the bottom so new layers
+  // and the template lines go over it. Not kept in the library: it is big.
+  pickPaint: () => $('file-paint').click(),
+  async importPaint(file) {
+    ui.say('Reading paint…');
+    try {
+      let src;
+      if (/\.tga$/i.test(file.name)) {
+        const { w, h, rgba } = decodeTGA(await file.arrayBuffer(), { opaque: true });
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+        src = c.toDataURL('image/png');
+      } else {
+        src = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(file);
+        });
+      }
+      let img = await loadImage(src);
+      if (Math.max(img.width, img.height) > SIZE) { // a 4096 paint would be 64 MB decoded; the sheet shows 2048
+        const c = document.createElement('canvas');
+        c.width = c.height = SIZE;
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(img, 0, 0, SIZE, SIZE);
+        src = c.toDataURL('image/png');
+        img = await loadImage(src);
+      }
+      const l = createImageLayer(img, src, file.name.replace(/\.[^.]+$/, ''));
+      l.scale = SIZE / img.width;
+      l.scaleY = img.width === img.height ? null : SIZE / img.height;
+      app.doc.layers.unshift(l);
+      if (app.mode !== 'paint') actions.setMode('paint');
+      actions.setTool('select');
+      app.sel = l.id;
+      change({ now: true });
+      ui.say(img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`);
+    } catch (err) {
+      ui.say('Could not read that paint: ' + (err.message || 'unknown error'), true);
+    }
+  },
+
   // ---- the library ----
   // Kept in this browser, across liveries: pictures you have brought in, and
   // shapes you have saved. The built-in graphics come with the app.
@@ -2588,9 +2634,10 @@ $('stage').addEventListener('drop', (e) => {
   if (!f) return;
   // a kit's PSD is a template; any other picture dropped on the sheet is a logo
   if (/\.psd$/i.test(f.name)) actions.loadTemplateFile(f);
+  else if (/\.tga$/i.test(f.name)) actions.importPaint(f); // a TGA is a paint (the browser cannot show one as a logo anyway)
   else if (app.mode === 'paint') actions.addImageFile(f, screenToDoc(...Object.values(local(e))));
 });
-for (const [id, fn] of [['file-image', (f) => actions.addImageFile(f)], ['file-shape', (f) => actions.addShapeFile(f)], ['file-font', (f) => actions.uploadFont(f)]]) {
+for (const [id, fn] of [['file-image', (f) => actions.addImageFile(f)], ['file-paint', (f) => actions.importPaint(f)], ['file-shape', (f) => actions.addShapeFile(f)], ['file-font', (f) => actions.uploadFont(f)]]) {
   $(id).addEventListener('change', (e) => {
     const f = e.target.files[0];
     e.target.value = '';
