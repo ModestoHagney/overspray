@@ -5,7 +5,7 @@
 // (It began as the page-free half of the original screen's template handler.)
 
 import { loadImage } from './engine.js';
-import { psdToTemplate } from './psd.js';
+import { psdToTemplate, xcfToTemplate } from './psd.js';
 import { createRegionMap, piecesRegionMap, uniqueRegionId, mapFit } from './regions.js';
 import { zonesToRegions, inferDecalPairs, applyOrientation } from './zones.js';
 
@@ -82,19 +82,20 @@ const fileToDataURL = (file) => new Promise((resolve, reject) => {
   r.readAsDataURL(file);
 });
 
-// file: a template PSD (pieces and zones are read from it) or a plain
+// file: a template PSD or GIMP file (pieces and zones are read from it) or a plain
 // picture (linework only). map: the doc's current region map, or null.
 // fit: how well the map already there matches this template's panels (see
 // mapFit), or null when there was nothing to compare
 // → { template: { img, src }, regionMap, pieces, zones, carName, fit, swatches }
 export async function loadTemplate(file, map = null) {
   const carName = file.name.replace(/\.[^.]+$/, '');
-  if (!/\.psd$/i.test(file.name)) {
+  if (!/\.(psd|xcf)$/i.test(file.name)) {
     const src = await fileToDataURL(file);
     return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null, swatches: [] };
   }
-  await ensurePsdReader();
-  const res = await psdToTemplate(await file.arrayBuffer());
+  const xcf = /\.xcf$/i.test(file.name);
+  if (!xcf) await ensurePsdReader();
+  const res = await (xcf ? xcfToTemplate : psdToTemplate)(await file.arrayBuffer());
   let decalData = null;
   if (res.decals) {
     try { decalData = res.decals.getContext('2d').getImageData(0, 0, res.decals.width, res.decals.height); } catch { /* no orientation hints */ }

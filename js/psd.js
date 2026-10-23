@@ -6,6 +6,7 @@
 import { SIZE } from './engine.js';
 import { detectPieces } from './regions.js';
 import { alphaComponents } from './zones.js';
+import { readXcf } from './xcf.js';
 
 let agPsdPromise = null;
 
@@ -187,7 +188,19 @@ function extractDecals(entries, w, h) {
 //   swatches  — [{ name, x, y, w, h, color, points? }]: the car's extra colour squares, and the pitboard by its outline ([] when the kit has none)
 export async function psdToTemplate(arrayBuffer) {
   const agPsd = await loadAgPsd();
-  const psd = agPsd.readPsd(arrayBuffer);
+  return templateOf(agPsd.readPsd(arrayBuffer));
+}
+// The same from a GIMP file, reading the pixels of only the layers a template
+// uses (or, with no wireframe, of what is shown, for the flattened picture)
+export async function xcfToTemplate(buf) {
+  const wire = hasWire((await readXcf(buf, { keep: () => false })).children);
+  const used = (x) => WIRE_RE.test(x.name) || zoneKind(x.name) || /pit\s*box|pit\s*board|cockpit/i.test(x.name) || DECAL_RE.test(x.name);
+  return templateOf(withCanvases(await readXcf(buf, { keep: (n, up) => {
+    const all = [n, ...up];
+    return !all.some(x => PATTERN_RE.test(x.name)) && (wire ? all.some(used) : !all.some(x => x.hidden));
+  } })));
+}
+function templateOf(psd) {
 
   const out = document.createElement('canvas');
   out.width = psd.width;
@@ -237,6 +250,8 @@ const PATTERN_RE = /car[\s_]*patterns?/i; // iRacing's stock designs (a group of
 const SKIP_LAYER_RE = /pit\s*box|pit\s*board|^(wire|mask)$|(sponsor|number)\s*blocks|car[\s_]*mandatory/i;
 // hidden kit extras, as a template import leaves them: alt-series decals
 const KIT_HIDDEN_RE = /decal|logos?\b/i;
+// what the import leaves out: a layer, or a group with all in it (hidden: it, or a group it is in, is turned off)
+const leftOut = (name, hidden, group) => (group ? SKIP_GROUP_RE : SKIP_LAYER_RE).test(name) || (hidden && KIT_HIDDEN_RE.test(name));
 
 // a layer's pixels with its mask's grey as their alpha
 function masked(c, l, m) {
@@ -277,10 +292,23 @@ function clipped(c, l, base) {
 //     kit: it has the kit's wireframe, so it can be the template too }
 export async function psdToLayers(arrayBuffer) {
   const agPsd = await loadAgPsd();
-  const psd = agPsd.readPsd(arrayBuffer);
+  return layersOf(agPsd.readPsd(arrayBuffer));
+}
+// The same from a GIMP file: only the layers that come in have their pixels read
+export async function xcfToLayers(buf) {
+  return layersOf(withCanvases(await readXcf(buf, { keep: (n, up) => {
+    let off = false;
+    for (const g of [...up, n]) {
+      off = off || g.hidden;
+      if (PATTERN_RE.test(g.name) || leftOut(g.name, off, g !== n)) return false;
+    }
+    return true;
+  } })));
+}
+function layersOf(psd) {
   const kx = SIZE / psd.width, ky = SIZE / psd.height;
   const layers = [], lost = { fx: 0, blend: 0, text: 0, hidden: 0, patterns: false };
-  const shownIn = (ls) => ls.some(c => !c.hidden && (c.children ? shownIn(c.children) : !!c.canvas));
+  const shownIn = (ls) => ls.some(c => !c.hidden && (c.children ? shownIn(c.children) : true));
   const walk = (children, group, opacity, off) => {
     let base = null; // what a clipping layer clips to: { canvas, left, top, hidden }, or 'off' when it was left out
     for (const l of children || []) {
@@ -291,10 +319,10 @@ export async function psdToLayers(arrayBuffer) {
       if (PATTERN_RE.test(name)) { if (!hidden && shownIn([l])) lost.patterns = true; continue; }
       if (l.children) {
         base = null; // what clips to a group comes in unclipped
-        if (!SKIP_GROUP_RE.test(name) && !(hidden && KIT_HIDDEN_RE.test(name))) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1), hidden);
+        if (!leftOut(name, hidden, true)) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1), hidden);
         continue;
       }
-      if (!l.canvas || SKIP_LAYER_RE.test(name) || (hidden && KIT_HIDDEN_RE.test(name))) continue;
+      if (!l.canvas || leftOut(name, hidden, false)) continue;
       let c = l.canvas;
       if (l.mask && !l.mask.disabled && l.mask.canvas) c = masked(c, l, l.mask);
       if (l.clipping && base) c = clipped(c, l, base);
@@ -319,7 +347,31 @@ export async function psdToLayers(arrayBuffer) {
     }
   };
   walk(psd.children, null, 1, false);
-  const all = [];
-  collectLayers(psd.children, false, false, all);
-  return { layers, lost, kit: all.some(e => e.matched) };
+  return { layers, lost, kit: hasWire(psd.children) };
+}
+
+// made from a kit: it has the kit's wireframe layer (named as collectLayers finds it)
+function hasWire(ls, under = false) {
+  return (ls || []).some(l => !SKIP_RE.test(l.name || '') && (l.children ? hasWire(l.children, under || WIRE_RE.test(l.name || '')) : under || WIRE_RE.test(l.name || '')));
+}
+
+// readXcf's tree as ag-psd has its own: pixels and masks on canvases
+function canvasOf(w, h, rgba) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+  return c;
+}
+function withCanvases(n) {
+  for (const l of n.children || []) {
+    if (l.image) l.canvas = canvasOf(l.image.w, l.image.h, l.image.rgba);
+    delete l.image; // its bytes are on the canvas now
+    if (l.mask) {
+      const { w, h, data } = l.mask, g = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) { g[i * 4] = g[i * 4 + 1] = g[i * 4 + 2] = data[i]; g[i * 4 + 3] = 255; }
+      l.mask.canvas = canvasOf(w, h, g);
+    }
+    withCanvases(l);
+  }
+  return n;
 }
