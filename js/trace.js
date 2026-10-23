@@ -16,6 +16,11 @@ const hex = (c) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).
 // in-between colours along every edge are not colours of the picture.
 // apart: how different two colours must be to count as two.
 export function flatColours(px, w, h, { max = 8, apart = 40, least = 0.003 } = {}) {
+  const { flat, colours } = flatCounts(px, w, h, { max, apart });
+  return colours.filter((o) => o.n >= flat * least).map((o) => o.c);
+}
+// …with how many flat pixels each has: → { flat (all of them), colours: [{ c, n }] }
+function flatCounts(px, w, h, { max = Infinity, apart = 40 } = {}) {
   const bins = new Map();
   let flat = 0;
   for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
@@ -32,11 +37,48 @@ export function flatColours(px, w, h, { max = 8, apart = 40, least = 0.003 } = {
   const out = [];
   for (const b of [...bins.values()].sort((p, q) => q[3] - p[3])) {
     const c = [b[0] / b[3], b[1] / b[3], b[2] / b[3]];
-    const near = out.find((o) => Math.hypot(o.c[0] - c[0], o.c[1] - c[1], o.c[2] - c[2]) < apart);
+    const near = out.find((o) => gap(o.c, c) < apart);
     if (near) near.n += b[3];
     else if (out.length < max) out.push({ c, n: b[3] });
   }
-  return out.filter((o) => o.n >= flat * least).map((o) => o.c);
+  return { flat, colours: out };
+}
+const gap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+// The main colours of a livery's pictures, for the colour list: each one that
+// covers `least` of the sheet (`total` pixels) or more, most used first, and
+// none within `apart` of a colour in `have` ('#rrggbb'). A picture that is
+// (nearly) all one colour gives that colour its name.
+// samples: [{ name, px, w, h, weight }], weight: sheet pixels per sample pixel.
+// → [{ name (or null), color: '#rrggbb' }]
+export function paintColours(samples, { total, least = 0.005, apart = 40, have = [] } = {}) {
+  const all = [];
+  for (const s of samples) {
+    const { flat, colours } = flatCounts(s.px, s.w, s.h, { apart });
+    const one = colours.length && colours[0].n >= flat * 0.9;
+    colours.forEach((o, i) => {
+      const name = one && i === 0 ? s.name : null, near = all.find((a) => gap(a.c, o.c) < apart);
+      if (near) { near.n += o.n * s.weight; near.name = near.name || name; } else all.push({ c: o.c, n: o.n * s.weight, name });
+    });
+  }
+  const had = have.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
+  return all.filter((a) => a.n >= total * least && !had.some((h) => gap(h, a.c) < apart))
+    .sort((a, b) => b.n - a.n).map((a) => ({ name: a.name, color: hex(a.c) }));
+}
+
+// A spec map's finishes (its red, green and blue are metallic, roughness and
+// clearcoat) as areas: `base` is its background's finish (the one in three
+// corners) or else the most used, and each other finish comes with its outline
+// as traceImage makes it. → { base: [r, g, b], areas: [{ rgb, pts }] }, or null with no flat finish
+export function specAreas(px, w, h, { max = 12, apart = 16 } = {}) {
+  const fs = flatColours(px, w, h, { max, apart });
+  if (!fs.length) return null;
+  const nearest = (o) => fs.reduce((b, c, i) => (far(px, o, c) < far(px, o, fs[b]) ? i : b), 0);
+  const cs = [0, w - 1, w * (h - 1), w * h - 1].map((i) => nearest(i * 4));
+  const base = fs[cs.find((c) => cs.filter((v) => v === c).length >= 3) ?? 0];
+  const areas = traceImage(px, w, h, { max, apart }).filter((f) => f.color && f.color !== hex(base))
+    .map((f) => ({ rgb: fs.find((c) => hex(c) === f.color), pts: f.pts }));
+  return { base, areas };
 }
 
 // The closed lines round everything above `level` in a field of w × h values
@@ -126,8 +168,8 @@ const round = (v) => Math.round(v * 100) / 100;
 // the cut-outs are the artwork, and come back as one more entry with color: null.
 // The colour in three or four of the picture's corners is its background: what of it reaches
 // the picture's edge is left out, and what is shut inside a shape is kept.
-export function traceImage(px, w, h, { tol = 0.3, max = 8 } = {}) {
-  const colours = flatColours(px, w, h, { max });
+export function traceImage(px, w, h, { tol = 0.3, max = 8, apart = 40 } = {}) {
+  const colours = flatColours(px, w, h, { max, apart });
   if (!colours.length) return [];
   const n = w * h;
   // For every pixel: the colour it is nearest to, the runner-up, and how much
