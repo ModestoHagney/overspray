@@ -57,6 +57,7 @@ export const app = {
   colour: '#111214',                  // what the next new shape is filled with
   clipboard: null,                    // a copied layer
   shapeKind: 'ellipse',               // which ready-made shape the Shape tool draws
+  shapeMenu: false,                   // its row of shapes is open: from its button until one is picked or drawn
   bandWidth: 60,                      // px on the sheet
   stamp: { key: 'star', size: 120 },  // what the Stamp tool places: a shape's key (see motifOf) and its size on the sheet
   trimming: false,                    // clicks on the sheet choose the selected layer's panels
@@ -1657,11 +1658,12 @@ const actions = {
       if (id !== 'mcentre') app.centreFor = null;
     }
     app.tool = id;
+    if (id === 'shape') app.shapeMenu = true;
     toolChanged();
     requestDraw();
     ui.refresh();
   },
-  setShapeKind(kind) { app.shapeKind = kind; requestDraw(); ui.refreshChrome(); },
+  setShapeKind(kind) { app.shapeKind = kind; app.shapeMenu = false; requestDraw(); ui.refreshChrome(); },
   setStamp(part) { Object.assign(app.stamp, part); requestDraw(); },
 
   // ---- repeat: copies of a layer in a line or a grid ----
