@@ -109,14 +109,15 @@ const FINISH_TOOLS = [
   ['piece', 'A whole panel (G). Shift+click adds to the same area'],
 ];
 const MAP_TOOLS = [
-  ['mpick', 'Select a panel'],
+  ['mpick', 'Select a panel: name it, set its twin'],
   ['hand', 'Hand (H)'],
-  ['mcentre', 'Centreline'],
-  ['mpair', 'Pair panels'],
-  ['mlink', 'Link edges'],
-  ['mplace', 'Place a piece'],
+  ['mcentre', 'Centreline: for a panel that crosses the middle (bonnet, roof)'],
+  ['mpair', 'Pair panels: the left and right twins, so Mirrored paints both'],
+  ['mlink', 'Link edges: where two panels meet, so paint carries across'],
+  ['mplace', 'Place a piece: where a loose part (a wing, say) sits on the car'],
 ];
-const PANELS = ['layers', 'props'];
+const PANELS = ['start', 'layers', 'props'];
+const FINISH_TIPS = { gloss: 'Shiny clear coat, like new paint', satin: 'A soft sheen, between gloss and matte', matte: 'Flat, no shine', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', chrome: 'A mirror: it reflects everything' };
 const WEIGHT_NAMES = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi bold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
 // A slider as one bar that fills up: its name inside on the left, its value
 // on the right. Dragged anywhere along it (Shift: slowly), or clicked to type.
@@ -139,6 +140,15 @@ export function initUI(app, actions, version) {
     panels[key] = p;
     $('dock').append(p);
   }
+  // Getting started: the few steps from nothing to the car in iRacing. Shown on
+  // the first visit; Help > Getting started brings it back
+  panels.start.querySelector('h2').textContent = 'Getting started';
+  panels.start.querySelector('.body').innerHTML = '<ol class="steps">' +
+    '<li>Load the car\'s template. <button class="link" data-act="pickTemplate">Load template…</button> or <button class="link" data-act="getTemplate">get one</button></li>' +
+    '<li>Pick a colour in Properties, then click panels with Fill panel (G), or draw with Pen, Shape, Text and Library on the left.</li>' +
+    '<li>Spec tab: click a colour and pick Gloss, Matte, Chrome…</li>' +
+    '<li><button class="link" data-act="linkFolder">Link your iRacing paints folder</button>, then turn on Live: every change shows on the car in iRacing.</li>' +
+    '</ol><div class="note">Mirrored paints both sides once the car has a map: Map tab, Browse maps. Hover a button to see what it does; the line at the bottom says how to use the tool you have. F1 lists the keys.</div>';
   // the Layers list is made taller or shorter by its bottom edge
   panels.layers.insertAdjacentHTML('beforeend', '<div class="grip" title="Drag to make the list taller or shorter" aria-hidden="true"></div>');
   panels.layers.lastChild.addEventListener('pointerdown', (e) => {
@@ -151,7 +161,7 @@ export function initUI(app, actions, version) {
   });
 
   // ---------- menus ----------
-  // [label, shortcut, action, { off, tick }]
+  // [label, shortcut, action, { off, tick, tip }]
   const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.swatchAt(app.sel);
   // what can be done to the selected shapes as shapes, and whether each applies now
   const shapeCan = () => {
@@ -175,9 +185,18 @@ export function initUI(app, actions, version) {
   ];
   const menuDefs = () => ({
     File: [
-      ['New', '', 'newLivery'], ['Open…', '', 'open'], ['Save', 'Ctrl+S', 'save'], 0,
-      ['Load template…', '', 'pickTemplate'], ['Import paint…', '', 'pickPaint'], ['Get a template…', '', 'getTemplate'], ['Car setup…', '', 'carSetup'], ['Livery colours…', '', 'liveryColours'], ['Palettes…', '', 'openPalettes'], ['Link iRacing paints folder…', '', 'linkFolder'], ['Save to iRacing', '', 'saveIracing'], 0,
-      ['Export TGA', '', 'exportTga'], ['Export PNG', '', 'exportPng'], ['Send to Trading Paints', '', 'sendTp'],
+      ['New', '', 'newLivery', { tip: 'Start an empty livery' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Keep this livery in this browser' }], 0,
+      ['Load template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
+      ['Import paint…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }],
+      ['Get a template…', '', 'getTemplate', { tip: "Where to download your car's template" }],
+      ['Car setup…', '', 'carSetup', { tip: 'Your iRacing customer number and which car this is, for the paint file names' }],
+      ['Livery colours…', '', 'liveryColours', { tip: 'Every colour in this livery, to change them in one go' }],
+      ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }],
+      ['Link iRacing paints folder…', '', 'linkFolder', { tip: 'Documents\\iRacing\\paint, so Save to iRacing and Live can write there' }],
+      ['Save to iRacing', '', 'saveIracing', { tip: 'Writes the paint and spec map into the linked folder; iRacing shows it on the car' }], 0,
+      ['Export TGA', '', 'exportTga', { tip: 'Download the paint as a TGA file, to copy into iRacing yourself' }],
+      ['Export PNG', '', 'exportPng', { tip: 'Download the paint as a picture' }],
+      ['Send to Trading Paints', '', 'sendTp', { tip: 'Upload it to Trading Paints so other drivers see it' }],
     ],
     Edit: [
       ['Undo', 'Ctrl+Z', 'undo', { off: !app.canUndo }], ['Redo', 'Ctrl+Y', 'redo', { off: !app.canRedo }], 0,
@@ -192,13 +211,13 @@ export function initUI(app, actions, version) {
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Getting started', '', 'show:start', { tick: app.show.start }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
     const [label, key, act, o = {}] = it;
     const cls = 'tick' in o ? (o.tick ? 'tick' : 'notick') : '';
-    return `<button data-act="${act}" class="${cls}"${o.off ? ' disabled' : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
+    return `<button data-act="${act}" class="${cls}"${o.off ? ' disabled' : ''}${o.tip ? ` title="${o.tip}"` : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
   };
   function drawMenus() {
     const open = document.querySelector('.menu.open')?.dataset.menu;
@@ -210,7 +229,7 @@ export function initUI(app, actions, version) {
   // ---------- the strip, modes, hint ----------
   function drawChrome() {
     drawMenus();
-    $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
+    $('modes').innerHTML = [['map', 'Map', 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
       `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
@@ -225,10 +244,10 @@ export function initUI(app, actions, version) {
       opts.innerHTML = PLAIN_SHAPES.map((k) => pick(k, true)).join('') + PLAIN_SHAPES.map((k) => pick(roundedOf(k), false)).join('') + PLAIN_SHAPES.map((k) => pick(hollowOf(k), false)).join('');
       opts.style.gridTemplateColumns = `repeat(${PLAIN_SHAPES.length}, auto)`;
     } else if (app.tool === 'band') {
-      opts.innerHTML = `<label class="optrow"><span>Width</span><input id="f-band" type="range" min="4" max="300" value="${app.bandWidth}"><output id="f-band-n" class="num">${app.bandWidth}</output></label>`;
+      opts.innerHTML = `<label class="optrow" title="How wide the band is, in pixels"><span>Width</span><input id="f-band" type="range" min="4" max="300" value="${app.bandWidth}"><output id="f-band-n" class="num">${app.bandWidth}</output></label>`;
     } else if (app.tool === 'stamp') {
-      opts.innerHTML = `<label class="optrow"><span>Shape</span><select id="f-stamp">${motifOptions(app.stamp.key)}</select></label>` +
-        `<label class="optrow"><span>Size</span><input id="f-stamp-size" type="range" min="10" max="600" value="${app.stamp.size}"><output id="f-stamp-n" class="num">${app.stamp.size}</output></label>`;
+      opts.innerHTML = `<label class="optrow" title="What each click stamps"><span>Shape</span><select id="f-stamp">${motifOptions(app.stamp.key)}</select></label>` +
+        `<label class="optrow" title="How big each stamp is, in pixels"><span>Size</span><input id="f-stamp-size" type="range" min="10" max="600" value="${app.stamp.size}"><output id="f-stamp-n" class="num">${app.stamp.size}</output></label>`;
     }
     // drawing a shape: its window's own buttons follow what is selected
     if (app.workshop) { const can = shapeCan(); for (const k of ['wrap', 'split', 'fillIn']) $('sb-' + k).disabled = !can[k]; }
@@ -299,7 +318,7 @@ export function initUI(app, actions, version) {
   function fadeHtml(l) {
     const fading = l.fillType === 'linear' || l.fillType === 'radial';
     const out = fading && typeof l.color2 === 'string' && l.color2.length === 9 && l.color2.endsWith('00');
-    return `<label class="switch">Fade<input id="f-fade" type="checkbox"${fading ? ' checked' : ''}></label>` + (!fading ? '' :
+    return `<label class="switch" title="The paint fades to a second colour, or to nothing">Fade<input id="f-fade" type="checkbox"${fading ? ' checked' : ''}></label>` + (!fading ? '' :
       fadeWay(l) +
       // the colours it passes through on the way, each placed along it
       (l.stops || []).map((o, k) => `<div class="with">${slider(`f-stop-${k}`, 1, 99, o.at * 100, `Colour ${k + 2}`, 'How far along the fade this colour sits')}<input id="f-stop-c${k}" data-fstop="${k}" type="color" value="${esc(hexOf(o.color) || '#ffffff')}" aria-label="Colour ${k + 2} of the fade"><button type="button" class="icon" data-fstopdrop="${k}" title="Take this colour out" aria-label="Take colour ${k + 2} out">${svg('close')}</button></div>`).join('') +
@@ -457,7 +476,7 @@ export function initUI(app, actions, version) {
       slider('f-curve', -180, 180, l.curve || 0, 'Curve') +
       (!lined ? '' : slider('f-lineSpacing', 60, 300, l.lineSpacing || 120, 'Line spacing') +
         field('Lines', `<select id="f-align">${[['left', 'Left'], ['center', 'Centred'], ['right', 'Right']].map(([v, n]) => opt(v, n, v === (l.align || 'center'))).join('')}</select>`)) +
-      `<label class="switch">Italic<input id="f-italic" type="checkbox"${l.italic ? ' checked' : ''}></label>`) +
+      `<label class="switch" title="Slanted letters">Italic<input id="f-italic" type="checkbox"${l.italic ? ' checked' : ''}></label>`) +
       (!isPic ? '' :
       `<div class="with">${slider('f-fx-shadow', 0, 60, fx.shadow || 0, 'Shadow')}<input id="f-fx-shadowColor" type="color" value="${esc(hexOf(fx.shadowColor || '') || '#000000')}" aria-label="Shadow colour"></div>` +
       `<div class="two">${slider('f-fx-shadowDX', -60, 60, fx.shadowDX ?? 8, 'X', 'Where the shadow falls: across')}${slider('f-fx-shadowDY', -60, 60, fx.shadowDY ?? 8, 'Y', 'Where the shadow falls: down')}</div>`) +
@@ -528,14 +547,14 @@ export function initUI(app, actions, version) {
     const label = many > 1 ? `${many} picked` : t.kind === 'colour' ? `<span class="dot" style="background:${esc(t.colour)}"></span>Everything this colour` : t.kind === 'area' ? esc(layer ? layer.name : 'Area') : `Just ${esc(layer ? layer.name : 'this layer')}`;
     // a shape or text can be finished with its whole colour, or by itself
     const canScope = many === 1 && ((t.kind === 'colour' && t.layerId) || (t.kind === 'layer' && layer && !layer.car && layerColour(layer)));
-    const scope = !canScope ? '' : `<div class="seg"><button data-scope="colour" aria-pressed="${t.kind === 'colour'}">All this colour</button><button data-scope="layer" aria-pressed="${t.kind === 'layer'}">Just this layer</button></div>`;
+    const scope = !canScope ? '' : `<div class="seg"><button data-scope="colour" aria-pressed="${t.kind === 'colour'}" title="Everything painted this colour gets the finish">All this colour</button><button data-scope="layer" aria-pressed="${t.kind === 'layer'}" title="Only this layer, whatever its colour">Just this layer</button></div>`;
     // the finish of anything else in the livery, taken over whole: no numbers to match by eye
     const others = finishList(d).filter((o) => !(o.kind === t.kind && (o.kind === 'colour' ? o.colour === t.colour : o.id === t.id)));
     const same = !others.length ? '' : field('Same as', `<select id="fn-same" title="Take the finish another colour or layer has, exactly">${opt('', 'Choose…', true)}${others.map((o) =>
       opt(`${o.kind}:${o.kind === 'colour' ? o.colour : o.id}`, `${o.kind === 'colour' ? o.colour.toUpperCase() : o.name} · ${finishLabel(o.material, o.params)}`, false)).join('')}</select>`);
     return '<canvas id="f-tile" class="ftile" width="472" height="176" aria-hidden="true"></canvas>' +
       `<div class="ftarget">${label}<b id="f-label"></b></div>` + scope +
-      `<div class="finishes">${FINISHES.map((k) => `<button data-finish="${k}" aria-pressed="${k === preset}">${finishName(k)}</button>`).join('')}</div>` +
+      `<div class="finishes">${FINISHES.map((k) => `<button data-finish="${k}" aria-pressed="${k === preset}" title="${FINISH_TIPS[k]}">${finishName(k)}</button>`).join('')}</div>` +
       same +
       slider('fn-met', 0, 255, f.met, 'Metallic') + slider('fn-rough', 0, 255, f.rough, 'Roughness') + slider('fn-clear', 0, 255, f.clear, 'Clearcoat') +
       `<div class="acts"><button class="btn" data-act="resetFinish" title="Put the three sliders back"${preset ? ' disabled' : ''}>Reset</button></div>` +
@@ -613,9 +632,9 @@ export function initUI(app, actions, version) {
         })() +
         `<div class="acts"><button class="btn" data-act="centreStart" title="Two matching corners, one each side"${r.center ? ' disabled' : ''}>Set centreline</button><button class="btn" data-act="centreRemove"${r.center ? '' : ' disabled'}>Remove centreline</button></div>`;
     return top + '<hr class="rule">' +
-      `<label class="switch">Panel colours<input id="m-colours" type="checkbox"${app.mapShow.colours ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Each panel in its own colour on the sheet, so you can tell them apart">Panel colours<input id="m-colours" type="checkbox"${app.mapShow.colours ? ' checked' : ''}></label>` +
       `<label class="switch" title="Paints the panel colours and names onto the car, so you can see which panel is which in the sim">Show on car<input id="m-guide" type="checkbox"${actions.guideOn() ? ' checked' : ''}></label>` +
-      '<div class="acts"><button class="btn" data-act="pickMapFile">Load map…</button><button class="btn" data-act="saveMap">Save map…</button></div>' +
+      '<div class="acts"><button class="btn" data-act="pickMapFile" title="A map saved as a file">Load map…</button><button class="btn" data-act="saveMap" title="Download this map as a file">Save map…</button></div>' +
       '<hr class="rule">' + libraryHtml();
   }
   // colours in use; `max`: how many, for the swatches
@@ -963,9 +982,9 @@ export function initUI(app, actions, version) {
   async function carSetup(cur) {
     const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
     const body =
-      `<label><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
+      `<label title="Your iRacing customer ID: on the iRacing site under Account, and in your paint file names (car_123456.tga)"><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
       `<label><span>Painting a</span><select id="cs-target">${opt('car', 'Car', cur.target === 'car')}${opt('helmet', 'Helmet', cur.target === 'helmet')}${opt('suit', 'Suit', cur.target === 'suit')}</select></label>` +
-      `<label class="check"><input id="cs-num" type="checkbox"${cur.customNumber ? ' checked' : ''}><span>Custom number paint</span></label>` +
+      `<label class="check" title="Your paint has its own numbers, so iRacing does not stamp its own over them"><input id="cs-num" type="checkbox"${cur.customNumber ? ' checked' : ''}><span>Custom number paint</span></label>` +
       (cur.cars.length ? `<label><span>Car folder</span><select id="cs-car">${opt('', 'Choose…', !cur.cars.includes(cur.car))}` +
         (cur.near.length ? `<optgroup label="Closest to this livery's name">${cur.near.map((c) => opt(c, c, false)).join('')}</optgroup><optgroup label="All">` : '') +
         cur.cars.map((c) => opt(c, c, c === cur.car)).join('') + (cur.near.length ? '</optgroup>' : '') + '</select></label>' : '') +
