@@ -2153,6 +2153,17 @@ const actions = {
       app.sel = l.id;
       change({ now: true });
       ui.say(img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`);
+      // asked (one of the few popups): each flat colour as a shape, so finishes can go by colour
+      if (!await ui.ask({ title: 'Split the paint into colours?', body: 'Each flat colour becomes a shape, so finishes can be set by colour. Fine detail and fades come out rougher. Make shapes in Properties does this later too.', ok: 'Split colours', cancel: 'Keep as one picture' })) return;
+      if (!app.doc.layers.includes(l)) return;
+      // Make shapes leaves the background out (right for a logo); on a paint it is the base coat, so the base coat takes it
+      const g = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const corners = [[0, 0], [img.width - 1, 0], [0, img.height - 1], [img.width - 1, img.height - 1]].map(([x, y]) => { g.clearRect(0, 0, 1, 1); g.drawImage(img, x, y, 1, 1, 0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data.slice(0, 3)]; });
+      const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 24);
+      const bg = corners.find(c => corners.filter(o => near(c, o)).length >= 3);
+      if (bg) { app.doc.baseColor = '#' + bg.map(v => v.toString(16).padStart(2, '0')).join(''); app.doc.baseRef = null; }
+      app.sel = l.id; app.sels = [];
+      actions.makeShapes();
     } catch (err) {
       ui.say('Could not read that paint: ' + (err.message || 'unknown error'), true);
     }
