@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeTGA } from '../js/tga.js';
+import { encodeTGA, decodeTGA } from '../js/tga.js';
 
 // 2x2 RGBA test image, rows top to bottom:
 //   red        green
@@ -64,4 +64,26 @@ test('encodeTGA 32-bit: descriptor 0x28 and alpha forced to 255', () => {
   }
   // first pixel red → BGRA = 0,0,255,255
   assert.deepEqual([...out.slice(18, 22)], [0, 0, 255, 255]);
+});
+
+test('decodeTGA reads what encodeTGA writes', () => {
+  const { w, h, rgba } = decodeTGA(encodeTGA(RGBA_2x2, 2, 2).buffer);
+  assert.equal(w, 2); assert.equal(h, 2);
+  assert.deepEqual([...rgba], [...RGBA_2x2]);
+});
+
+test('decodeTGA: RLE, bottom-left origin, 32-bit alpha and opaque', () => {
+  // bottom row first: blue, white (raw packet); then top row: red twice (run)
+  const body = new Uint8Array([
+    0x01, 255, 0, 0, 10,  255, 255, 255, 20,
+    0x81, 0, 0, 255, 30,
+  ]);
+  const buf = concat(header({ type: 10, w: 2, h: 2, bpp: 32, descriptor: 0x08 }), body);
+  const { rgba } = decodeTGA(buf);
+  assert.deepEqual([...rgba], [255, 0, 0, 30, 255, 0, 0, 30, 0, 0, 255, 10, 255, 255, 255, 20]);
+  assert.equal(decodeTGA(buf, { opaque: true }).rgba[3], 255);
+});
+
+test('decodeTGA refuses colour-mapped files', () => {
+  assert.throws(() => decodeTGA(concat(header({ type: 1, w: 1, h: 1, bpp: 8, cmapType: 1 }), new Uint8Array(1))));
 });

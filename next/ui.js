@@ -176,7 +176,7 @@ export function initUI(app, actions, version) {
   const menuDefs = () => ({
     File: [
       ['New', '', 'newLivery'], ['Open…', '', 'open'], ['Save', 'Ctrl+S', 'save'], 0,
-      ['Load template…', '', 'pickTemplate'], ['Get a template…', '', 'getTemplate'], ['Car setup…', '', 'carSetup'], ['Livery colours…', '', 'liveryColours'], ['Palettes…', '', 'openPalettes'], ['Link iRacing paints folder…', '', 'linkFolder'], ['Save to iRacing', '', 'saveIracing'], 0,
+      ['Load template…', '', 'pickTemplate'], ['Import paint…', '', 'pickPaint'], ['Get a template…', '', 'getTemplate'], ['Car setup…', '', 'carSetup'], ['Livery colours…', '', 'liveryColours'], ['Palettes…', '', 'openPalettes'], ['Link iRacing paints folder…', '', 'linkFolder'], ['Save to iRacing', '', 'saveIracing'], 0,
       ['Export TGA', '', 'exportTga'], ['Export PNG', '', 'exportPng'], ['Send to Trading Paints', '', 'sendTp'],
     ],
     Edit: [
