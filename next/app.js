@@ -2197,7 +2197,7 @@ const actions = {
       actions.setTool('select');
       app.sel = made[made.length - 1].id;
       change({ now: true });
-      const notes = [lost.hidden && `${lost.hidden} turned off, as they were in the PSD`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      const notes = [lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the PSD`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
       ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), !!(lost.fx || lost.blend || lost.text)); // turned off is not a loss
     } catch (err) {
       ui.say('Could not read the layers in that PSD: ' + (err.message || 'unknown error'), true);
