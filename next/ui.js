@@ -210,8 +210,8 @@ export function initUI(app, actions, version) {
   // ---------- the strip, modes, hint ----------
   function drawChrome() {
     drawMenus();
-    $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Finish']].map(([id, name]) =>
-      `<button data-mode="${id}" aria-pressed="${app.mode === id}">${name}</button>`).join('');
+    $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
+      `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
     $('tools').innerHTML = strip.map(([id, name]) =>
@@ -630,7 +630,7 @@ export function initUI(app, actions, version) {
   }
   function drawPanels() {
     const inMap = app.mode === 'map', inFinish = app.mode === 'finish';
-    panels.layers.querySelector('h2').textContent = inMap ? 'Panels' : inFinish ? 'Finishes' : 'Layers';
+    panels.layers.querySelector('h2').textContent = inMap ? 'Panels' : inFinish ? 'Spec map' : 'Layers';
     panels.props.querySelector('h2').textContent = inMap ? 'Panel' : inFinish ? 'Finish' : 'Properties';
     panels.layers.querySelector('.body').innerHTML = inMap ? piecesHtml() : inFinish ? finishesHtml() : layersHtml();
     panels.props.querySelector('.body').innerHTML = inMap ? pieceHtml() : inFinish ? finishHtml() : propsHtml();

@@ -1061,8 +1061,8 @@ const actions = {
         if (!dir) throw 0; // no folder linked, or a reload dropped access to it
         const mip = await persist.readFileFromFolder(dir, `car_spec_${app.custid}.mip`);
         const tga = mip && await persist.readFileFromFolder(dir, `car_spec_${app.custid}.tga`);
-        if (!mip) why = 'No finish file yet: Save to iRacing, open the car in iRacing once, then send again.';
-        else if (tga && mip.lastModified < tga.lastModified) why = 'Finish file is out of date: open the car in iRacing once, then send again.';
+        if (!mip) why = 'No spec map file yet: Save to iRacing, open the car in iRacing once, then send again.';
+        else if (tga && mip.lastModified < tga.lastModified) why = 'Spec map file is out of date: open the car in iRacing once, then send again.';
         else { download(mip, safeName() + '_spec.mip'); why = null; }
       } catch { why = 'No finish file: turn on Live (or link the paints folder) so Overspray can read it, then send again.'; }
     }
