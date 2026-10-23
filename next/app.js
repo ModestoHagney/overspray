@@ -16,7 +16,7 @@ import {
 import { canvasToTGA, decodeTGA } from '../js/tga.js';
 import * as persist from '../js/persist.js';
 import { loadTemplate } from '../js/template.js';
-import { psdToLayers } from '../js/psd.js';
+import { psdToLayers, xcfToLayers } from '../js/psd.js';
 import { saveToIracing, paintFilenames, validCustid, exportPaintCanvas, paintsDir, carFolders, isPaintsFolder, matchCar } from '../js/iracing.js';
 import { initUI } from './ui.js';
 import * as maplib from './maplib.js';
@@ -2116,7 +2116,7 @@ const actions = {
   // and the template lines go over it. Not kept in the library: it is big.
   pickPaint: () => $('file-paint').click(),
   async importPaint(file) {
-    if (/\.psd$/i.test(file.name)) return actions.importPsd(file);
+    if (/\.(psd|xcf)$/i.test(file.name)) return actions.importPsd(file);
     ui.say('Reading paint…');
     try {
       let src;
@@ -2169,15 +2169,15 @@ const actions = {
     }
   },
 
-  // A livery PSD as its layers (see psdToLayers), at the bottom like a flat
+  // A livery PSD or GIMP file as its layers (see psdToLayers), at the bottom like a flat
   // paint. With no template yet, a PSD made from a kit is the template too.
   async importPsd(file) {
     const d = app.doc;
     ui.say('Reading layers…');
     try {
-      const { layers, lost, kit } = await psdToLayers(await file.arrayBuffer());
+      const { layers, lost, kit } = await (/\.xcf$/i.test(file.name) ? xcfToLayers : psdToLayers)(await file.arrayBuffer());
       if (!d.template && kit) await actions.loadTemplateFile(file);
-      if (!layers.length) { ui.say('No visible layers to bring in from that PSD', true); return; }
+      if (!layers.length) { ui.say('No layers to bring in from that file', true); return; }
       const made = [], groups = new Map(); // PSD group name → its layers
       for (const e of layers) {
         const src = e.canvas.toDataURL('image/png');
@@ -2197,10 +2197,10 @@ const actions = {
       actions.setTool('select');
       app.sel = made[made.length - 1].id;
       change({ now: true });
-      const notes = [lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the PSD`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      const notes = [lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the file`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
       ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), !!(lost.fx || lost.blend || lost.text)); // turned off is not a loss
     } catch (err) {
-      ui.say('Could not read the layers in that PSD: ' + (err.message || 'unknown error'), true);
+      ui.say('Could not read the layers in that file: ' + (err.message || 'unknown error'), true);
     }
   },
 
@@ -2680,8 +2680,8 @@ $('stage').addEventListener('drop', (e) => {
   e.preventDefault();
   const f = e.dataTransfer.files[0];
   if (!f) return;
-  // a kit's PSD is a template; any other picture dropped on the sheet is a logo
-  if (/\.psd$/i.test(f.name)) actions.loadTemplateFile(f);
+  // a kit's PSD or GIMP file is a template; any other picture dropped on the sheet is a logo
+  if (/\.(psd|xcf)$/i.test(f.name)) actions.loadTemplateFile(f);
   else if (/\.tga$/i.test(f.name)) actions.importPaint(f); // a TGA is a paint (the browser cannot show one as a logo anyway)
   else if (app.mode === 'paint') actions.addImageFile(f, screenToDoc(...Object.values(local(e))));
 });
