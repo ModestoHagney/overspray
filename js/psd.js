@@ -225,3 +225,91 @@ export async function psdToTemplate(arrayBuffer) {
   }
   return { src: out.toDataURL('image/png'), usedWireframe: false, pieces: [], ...intel };
 }
+
+// ---------- a livery PSD as layers ----------
+// Someone's finished livery in Photoshop, as picture layers: every visible
+// pixel layer, in order, with its opacity, its layer mask and its clipping
+// baked into its pixels. The kit's own helper layers are left out (Overspray
+// makes the pit box and pitboard itself), and so is the spec map.
+const SKIP_GROUP_RE = /turn\s*off|spec\s*map/i;
+const SKIP_LAYER_RE = /pit\s*box|pit\s*board|^(wire|mask)$|(sponsor|number)\s*blocks|car[\s_]*mandatory/i;
+
+// a layer's pixels with its mask's grey as their alpha
+function masked(c, l, m) {
+  const out = document.createElement('canvas');
+  out.width = c.width; out.height = c.height;
+  const g = out.getContext('2d');
+  if (m.defaultColor) { g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); } // outside the mask's box: shown
+  const mw = m.canvas.width, mh = m.canvas.height;
+  if (mw && mh) {
+    const id = m.canvas.getContext('2d').getImageData(0, 0, mw, mh), p = id.data;
+    for (let i = 0; i < p.length; i += 4) p[i + 3] = p[i];
+    const mx = (m.left || 0) - (m.positionRelativeToLayer ? 0 : l.left || 0), my = (m.top || 0) - (m.positionRelativeToLayer ? 0 : l.top || 0);
+    g.clearRect(mx, my, mw, mh);
+    g.putImageData(id, mx, my);
+  }
+  g.globalCompositeOperation = 'source-in';
+  g.drawImage(c, 0, 0);
+  return out;
+}
+
+// a clipped layer cut to the alpha of the layer it clips to
+function clipped(c, l, base) {
+  const out = document.createElement('canvas');
+  out.width = c.width; out.height = c.height;
+  const g = out.getContext('2d');
+  g.drawImage(c, 0, 0);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(base.canvas, base.left - (l.left || 0), base.top - (l.top || 0));
+  return out;
+}
+
+// → { layers: [{ name, canvas, x, y, scale, scaleY, opacity, blend, group }]
+//     bottom first, x/y the centre in 2048-sheet space; group: the PSD group
+//     it was in (not the kit's "Paintable Area"), or null,
+//     lost: { fx, blend, text }: how many came in without effects, with a
+//     blend Overspray does not have (as normal), or as a picture of their text },
+//     kit: it has the kit's wireframe, so it can be the template too }
+export async function psdToLayers(arrayBuffer) {
+  const agPsd = await loadAgPsd();
+  const psd = agPsd.readPsd(arrayBuffer);
+  const kx = SIZE / psd.width, ky = SIZE / psd.height;
+  const layers = [], lost = { fx: 0, blend: 0, text: 0 };
+  const walk = (children, group, opacity) => {
+    let base = null; // what a clipping layer clips to: { canvas, left, top }, or 'off' when it is not shown
+    for (const l of children || []) {
+      const name = l.name || '';
+      if (!l.clipping) base = 'off';
+      if (l.hidden || (l.clipping && base === 'off')) continue;
+      if (l.children) {
+        base = null; // what clips to a group comes in unclipped
+        if (!SKIP_GROUP_RE.test(name)) walk(l.children, /paintable/i.test(name) ? group : name, opacity * (l.opacity ?? 1));
+        continue;
+      }
+      if (!l.canvas || SKIP_LAYER_RE.test(name)) continue;
+      let c = l.canvas;
+      if (l.mask && !l.mask.disabled && l.mask.canvas) c = masked(c, l, l.mask);
+      if (l.clipping && base) c = clipped(c, l, base);
+      else base = { canvas: c, left: l.left || 0, top: l.top || 0 };
+      if (l.effects && !l.effects.disabled) lost.fx++;
+      if (l.text) lost.text++;
+      const blend = l.blendMode === 'multiply' ? 'multiply' : null;
+      if (!blend && l.blendMode && l.blendMode !== 'normal') lost.blend++;
+      const x = ((l.left || 0) + c.width / 2) * kx, y = ((l.top || 0) + c.height / 2) * ky;
+      let scale = kx, scaleY = ky === kx ? null : ky;
+      if (kx < 1 || ky < 1) { // a bigger PSD's layers brought down to the sheet, as pictures are
+        const s = document.createElement('canvas');
+        s.width = Math.max(1, Math.round(c.width * kx)); s.height = Math.max(1, Math.round(c.height * ky));
+        const g = s.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(c, 0, 0, s.width, s.height);
+        c = s; scale = 1; scaleY = null;
+      }
+      layers.push({ name: name || 'Layer', canvas: c, x, y, scale, scaleY, opacity: opacity * (l.opacity ?? 1), blend, group });
+    }
+  };
+  walk(psd.children, null, 1);
+  const all = [];
+  collectLayers(psd.children, false, false, all);
+  return { layers, lost, kit: all.some(e => e.matched) };
+}
