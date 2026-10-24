@@ -196,7 +196,7 @@ export function initUI(app, actions, version) {
       ['Car setup…', '', 'carSetup', { tip: 'Your iRacing customer number and which car this is, for the paint file names' }],
       ['Livery colours…', '', 'liveryColours', { tip: 'Every colour in this livery, to change them in one go' }],
       ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }],
-      ['Link iRacing paints folder…', '', 'linkFolder', { tip: 'Documents\\iRacing\\paint, so Save to iRacing and Live can write there' }],
+      ['Link iRacing paints folder…', '', 'linkFolder', { tip: 'Documents\\iRacing\\paints, so Save to iRacing and Live can write there' }],
       ['Save to iRacing', '', 'saveIracing', { tip: 'Writes the paint and spec map into the linked folder; iRacing shows it on the car' }], 0,
       ['Export TGA', '', 'exportTga', { tip: 'Download the paint as a TGA file, to copy into iRacing yourself' }],
       ['Export PNG', '', 'exportPng', { tip: 'Download the paint as a picture' }],
