@@ -237,7 +237,7 @@ export function initUI(app, actions, version) {
       `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
     const opts = $('toolopts');
-    if (app.tool === 'shape') {
+    if (app.tool === 'shape' && app.shapeMenu) {
       // the plain shapes in a row, under each one its round-cornered version,
       // and under that its hollow version (a gap where there is none)
       const pick = (k, up) => (k ? `<button class="tool${up ? ' up' : ''}" data-kind="${k}" data-tip="${SHAPES[k]}" aria-label="${SHAPES[k]}" aria-pressed="${app.shapeKind === k}">${svg(k)}</button>` : '<span></span>');
@@ -253,7 +253,7 @@ export function initUI(app, actions, version) {
     if (app.workshop) { const can = shapeCan(); for (const k of ['wrap', 'split', 'fillIn']) $('sb-' + k).disabled = !can[k]; }
     opts.classList.toggle('rows', app.tool === 'stamp');
     opts.classList.toggle('grid', app.tool === 'shape');
-    opts.hidden = app.tool !== 'shape' && app.tool !== 'band' && app.tool !== 'stamp';
+    opts.hidden = !(app.tool === 'shape' && app.shapeMenu) && app.tool !== 'band' && app.tool !== 'stamp';
     // level with the button it belongs to
     const btn = $('tools').querySelector('.tool[aria-pressed="true"]');
     if (btn && !opts.hidden) {
