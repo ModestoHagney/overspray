@@ -108,6 +108,10 @@ const FINISH_TOOLS = [
   ['shape', 'Area from a shape (U)'],
   ['piece', 'A whole panel (G). Shift+click adds to the same area'],
 ];
+// tools and Properties controls that need the template's panels: greyed out without one
+const NEEDS = 'Open a blank template first';
+const PANEL_TOOLS = ['piece', 'cargrad', 'extras'];
+const PANEL_CONTROLS = '[data-act="mirror"], [data-act="separate"], [data-act="trim"], [data-act="trimClear"], #f-continues, #f-mirrorFlip, #f-mirrored';
 const MAP_TOOLS = [
   ['mpick', 'Select a panel: name it, set its twin'],
   ['hand', 'Hand (H)'],
@@ -144,7 +148,7 @@ export function initUI(app, actions, version) {
   // the first visit; Help > Getting started brings it back
   panels.start.querySelector('h2').textContent = 'Getting started';
   panels.start.querySelector('.body').innerHTML = '<ol class="steps">' +
-    '<li>Load the car\'s template. <button class="link" data-act="pickTemplate">Load template…</button> or <button class="link" data-act="getTemplate">get one</button></li>' +
+    '<li>Open the car\'s template. <button class="link" data-act="pickTemplate">Open blank template…</button> or <button class="link" data-act="getTemplate">get one</button>. Have a paint already? <button class="link" data-act="pickPaint">Open paint file…</button></li>' +
     '<li>Pick a colour in Properties, then click panels with Fill panel (G), or draw with Pen, Shape, Text and Library on the left.</li>' +
     '<li>Spec tab: click a colour and pick Gloss, Matte, Chrome…</li>' +
     '<li><button class="link" data-act="linkFolder">Link your iRacing paints folder</button>, then turn on Live: every change shows on the car in iRacing.</li>' +
@@ -180,13 +184,13 @@ export function initUI(app, actions, version) {
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
     ...shapeItems(), 0,
-    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), tick: !!(actions.selected() || {}).mirrored }], ['Trim to panels', '', 'trim', { off: !hasLayer() }], 0,
+    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim to panels', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
   ];
   const menuDefs = () => ({
     File: [
       ['New', '', 'newLivery', { tip: 'Start an empty livery' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Keep this livery in this browser' }], 0,
-      ['Load template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
+      ['Open blank template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
       ['Import paint…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }],
       ['Get a template…', '', 'getTemplate', { tip: "Where to download your car's template" }],
       ['Car setup…', '', 'carSetup', { tip: 'Your iRacing customer number and which car this is, for the paint file names' }],
@@ -207,7 +211,7 @@ export function initUI(app, actions, version) {
     ],
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
-      ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn() }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines }], ['Template lines', '', 'show:lines', { tick: app.show.lines }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh }], 0,
+      ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
@@ -217,7 +221,8 @@ export function initUI(app, actions, version) {
     if (!it) return '<hr>';
     const [label, key, act, o = {}] = it;
     const cls = 'tick' in o ? (o.tick ? 'tick' : 'notick') : '';
-    return `<button data-act="${act}" class="${cls}"${o.off ? ' disabled' : ''}${o.tip ? ` title="${o.tip}"` : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
+    const bare = o.needs && !app.doc.template, tip = bare ? NEEDS : o.tip;
+    return `<button data-act="${act}" class="${cls}"${o.off || bare ? ' disabled' : ''}${tip ? ` title="${tip}"` : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
   };
   function drawMenus() {
     const open = document.querySelector('.menu.open')?.dataset.menu;
@@ -229,12 +234,13 @@ export function initUI(app, actions, version) {
   // ---------- the strip, modes, hint ----------
   function drawChrome() {
     drawMenus();
-    $('modes').innerHTML = [['map', 'Map', 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
-      `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
+    const bare = !app.doc.template;
+    $('modes').innerHTML = [['map', 'Map', bare ? NEEDS : 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
+      `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''}${bare && id === 'map' ? ' disabled' : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
-    $('tools').innerHTML = strip.map(([id, name]) =>
-      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
+    $('tools').innerHTML = strip.map(([id, name, off = bare && PANEL_TOOLS.includes(id)]) =>
+      `<button class="tool" data-tool="${id}" data-tip="${off ? `${name.split(/[.(:]/)[0].trim()}: ${NEEDS.toLowerCase()}` : name}" aria-label="${name}"${off ? ' aria-disabled="true"' : ''} aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
     const opts = $('toolopts');
     if (app.tool === 'shape' && app.shapeMenu) {
@@ -647,12 +653,17 @@ export function initUI(app, actions, version) {
     // a swatch does not jump about when a colour is used more or less
     return [...n.keys()].slice(0, max);
   }
+  function greyPanelControls() {
+    if (app.doc.template) return;
+    for (const el of panels.props.querySelectorAll(PANEL_CONTROLS)) { el.disabled = true; (el.closest('label') || el).title = NEEDS; }
+  }
   function drawPanels() {
     const inMap = app.mode === 'map', inFinish = app.mode === 'finish';
     panels.layers.querySelector('h2').textContent = inMap ? 'Panels' : inFinish ? 'Spec map' : 'Layers';
     panels.props.querySelector('h2').textContent = inMap ? 'Panel' : inFinish ? 'Finish' : 'Properties';
     panels.layers.querySelector('.body').innerHTML = inMap ? piecesHtml() : inFinish ? finishesHtml() : layersHtml();
     panels.props.querySelector('.body').innerHTML = inMap ? pieceHtml() : inFinish ? finishHtml() : propsHtml();
+    greyPanelControls();
     drawTile();
     const cur = panels.layers.querySelector('.row.sel');
     if (inMap && cur) cur.scrollIntoView({ block: 'nearest' });
@@ -732,7 +743,7 @@ export function initUI(app, actions, version) {
     if (sw && (app.sel === 'base' || (actions.selected() || {}).type === 'fill')) sw.style.background = v;
     actions.setColour(v);
     // a picture's first colour: "Original colours" comes on (the colour boxes are left alone, one is in use)
-    if (app.mode === 'paint' && (actions.selected() || {}).type === 'image' && panels.props.querySelector('[data-act="ownColours"]:disabled')) panels.props.querySelector('.body').innerHTML = propsHtml();
+    if (app.mode === 'paint' && (actions.selected() || {}).type === 'image' && panels.props.querySelector('[data-act="ownColours"]:disabled')) { panels.props.querySelector('.body').innerHTML = propsHtml(); greyPanelControls(); }
   });
   panels.props.addEventListener('input', (e) => {
     const t = e.target;

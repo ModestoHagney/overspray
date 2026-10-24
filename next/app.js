@@ -31,6 +31,9 @@ import { initCarGradient } from './cargrad.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
 import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
 
+// what needs the template's panels says so, greyed out, until one is loaded
+const NEEDS_TEMPLATE = 'Open a blank template first';
+const needTemplate = () => { if (app.doc.template) return false; ui.say(NEEDS_TEMPLATE, true); return true; };
 export const VERSION = self.VERSION || 'unknown'; // from version.js, which the page loads first
 
 const $ = (id) => document.getElementById(id);
@@ -712,6 +715,7 @@ async function setDoc(doc, projectId) {
   app.piece = app.centreFor = null;
   app.trimming = false;
   app.doc = doc;
+  if (!doc.template && app.mode === 'map') actions.setMode('paint'); // Map is greyed out with no template
   oneSparkle(doc); // an older livery could have a different sparkle on each layer: they all take the first one's
   app.projectId = projectId;
   app.sel = 'base';
@@ -1115,7 +1119,7 @@ const actions = {
   },
 
   setMode(mode) {
-    if (mode === app.mode) return;
+    if (mode === app.mode || (mode === 'map' && needTemplate())) return;
     tools.cancel(); mapTools.cancel(); carGrad.close();
     app.mode = mode;
     app.tool = mode === 'map' ? 'mpick' : 'select';
@@ -1349,10 +1353,12 @@ const actions = {
   // One fade over the whole car, painted on each panel by its car line (see cargrad.js)
   // the left strip's Car extras: the pit box, cockpit and pitboard, in Properties
   openExtras() {
+    if (needTemplate()) return;
     if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, cockpit or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
     actions.select(swatchAt(app.sel) ? app.sel : 'sw0');
   },
   addCarGradient() {
+    if (needTemplate()) return;
     if (app.mode !== 'paint') actions.setMode('paint');
     const l = createFillLayer(app.colour);
     const n = app.doc.layers.filter(x => x.car).length + 1;
@@ -1376,7 +1382,7 @@ const actions = {
   },
   toggleMapColours() { app.mapShow.colours = !app.mapShow.colours; requestDraw(); ui.refresh(); },
   async toggleGuide() {
-    if (!app.doc.regionMap) { ui.say('Load a template first', true); return; }
+    if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
     await syncGuide(app.doc, !guideLayer(app.doc));
     change({ now: true });
     ui.say(guideLayer(app.doc) ? 'Panel colours are on the car. Switch this off before your real save.' : 'Panel colours are off the car');
@@ -1525,7 +1531,7 @@ const actions = {
   // centreline) as well, and both sides follow every edit
   mirror() {
     const l = actions.selected(), ls = selectedLayers();
-    if (!l || !canChange()) return;
+    if (!l || !canChange() || needTemplate()) return;
     // any of them mirrored: the switch is on, and this takes it off them all
     if (ls.some(x => x.mirrored)) { for (const x of ls) x.mirrored = false; change({ now: true }); return; }
     // every selected layer that has somewhere to mirror onto
@@ -1546,7 +1552,7 @@ const actions = {
   // on the panel that edge meets, and follows every edit
   continues() {
     const l = actions.selected(), ls = selectedLayers();
-    if (!l || !canChange()) return;
+    if (!l || !canChange() || needTemplate()) return;
     if (ls.some(x => x.continues)) { for (const x of ls) x.continues = false; change({ now: true }); return; }
     if (ls.length > 1) { // each that sits on a panel with a linked edge
       let done = 0, first = null;
@@ -1628,7 +1634,7 @@ const actions = {
   },
   trim() {
     if (!actions.selected() || app.mode !== 'paint') return;
-    if (!app.doc.regionMap) { ui.say('Load a template first', true); return; }
+    if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
     app.trimming = !app.trimming;
     toolChanged();
     requestDraw();
@@ -1644,6 +1650,7 @@ const actions = {
   },
 
   setTool(id) {
+    if (id === 'piece' && needTemplate()) return;
     // The Hand is taken up and put down again (H a second time, its button, or
     // Esc) without disturbing what was in progress: a half-drawn pen shape, or
     // panels being picked for a trim, is still there when the tool it came
@@ -2193,7 +2200,7 @@ const actions = {
       actions.setTool('select');
       app.sel = l.id;
       change({ now: true });
-      ui.say((img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`) + (kept ? `, ${kept} colours saved to the colour list` : ''));
+      ui.say((img.width === SIZE && img.height === SIZE ? 'Paint added as the bottom layer' : `Paint added as the bottom layer, stretched from ${img.width}x${img.height} to fit the sheet`) + (kept ? `, ${kept} colours saved to the colour list` : '') + (app.doc.template ? '' : ". Open the car's blank template too for panel lines"));
       // asked (one of the few popups): each flat colour as a shape, so finishes can go by colour
       if (!await ui.ask({ title: 'Split the paint into colours?', body: 'Each flat colour becomes a shape, so finishes can be set by colour. Fine detail and fades come out rougher. Make shapes in Properties does this later too.', ok: 'Split colours', cancel: 'Keep as one picture' })) return;
       if (!app.doc.layers.includes(l)) return;
@@ -2752,6 +2759,7 @@ $('file-map').addEventListener('change', (e) => {
   if (f) actions.loadMapFile(f);
 });
 $('btn-empty-template').addEventListener('click', actions.pickTemplate);
+$('btn-empty-paint').addEventListener('click', actions.pickPaint);
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 $('btn-theme').addEventListener('click', () => actions.flipTheme());

@@ -194,7 +194,7 @@ export function initTools(app, env) {
   // Shift: the panel joins the selected shape instead, so several panels make one layer
   function fillPanel(p, e) {
     const r = pieceAt(app.doc.regionMap, p.x, p.y);
-    if (!r) { env.say(app.doc.regionMap ? 'Click inside a panel' : 'Load a template first'); return; }
+    if (!r) { env.say(app.doc.regionMap ? 'Click inside a panel' : 'Open a blank template first'); return; }
     const pts = growOutline(regionOutline(r), 2).map(q => ({ x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 }));
     const into = e.shiftKey && selShape();
     if (into) {

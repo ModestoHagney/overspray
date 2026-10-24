@@ -70,7 +70,7 @@ export function initCarGradient(app, env) {
           `<button class="icon" data-lineout="${k}" title="Take ${esc(names(cl.regions))} off" aria-label="Take ${esc(names(cl.regions))} off">${X}</button></div>`;
       }).join('') + '</div>' +
       `<div class="cg-acts"><button class="btn" data-cg="add"${bl.length >= 12 ? ' disabled' : ''}>Add a colour</button>` +
-      `<button class="btn${!lines().length && !picking ? ' cue' : ''}" data-cg="pick"${m ? '' : ' disabled title="Load a template first"'} aria-pressed="${picking}" title="Click panels on the sheet (Shift adds, or drag a box round them), then drag an arrow across them front to back">Set panels</button></div>`;
+      `<button class="btn${!lines().length && !picking ? ' cue' : ''}" data-cg="pick"${m ? '' : ' disabled title="Open a blank template first"'} aria-pressed="${picking}" title="Click panels on the sheet (Shift adds, or drag a box round them), then drag an arrow across them front to back">Set panels</button></div>`;
     shown = state();
     // moved by hand and grown since: kept on screen
     if (el.style.top && el.style.top !== 'auto') el.style.top = Math.max(0, Math.min(parseFloat(el.style.top), $stage().clientHeight - el.offsetHeight)) + 'px';
