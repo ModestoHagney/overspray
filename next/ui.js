@@ -148,7 +148,7 @@ export function initUI(app, actions, version) {
   // the first visit; Help > Getting started brings it back
   panels.start.querySelector('h2').textContent = 'Getting started';
   panels.start.querySelector('.body').innerHTML = '<ol class="steps">' +
-    '<li>Open the car\'s template. <button class="link" data-act="pickTemplate">Open blank template…</button> or <button class="link" data-act="getTemplate">get one</button>. Have a paint already? <button class="link" data-act="pickPaint">Open paint file…</button></li>' +
+    '<li>Open the car\'s template. <button class="link" data-act="pickTemplate">Open blank template…</button> or <button class="link" data-act="getTemplate">get one</button>. Have a paint already? <button class="link" data-act="pickPaint">Import paint file…</button></li>' +
     '<li>Pick a colour in Properties, then click panels with Fill panel (G), or draw with Pen, Shape, Text and Library on the left.</li>' +
     '<li>Spec tab: click a colour and pick Gloss, Matte, Chrome…</li>' +
     '<li><button class="link" data-act="linkFolder">Link your iRacing paints folder</button>, then turn on Live: every change shows on the car in iRacing.</li>' +
@@ -190,17 +190,19 @@ export function initUI(app, actions, version) {
   const menuDefs = () => ({
     File: [
       ['New', '', 'newLivery', { tip: 'Start an empty livery' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Keep this livery in this browser' }], 0,
+      ['Open Overspray livery…', '', 'pickLivery', { tip: 'An .overspray file: a livery exported from Overspray on this or another computer' }],
+      ['Export Overspray livery', '', 'exportLivery', { tip: 'Download this livery as one .overspray file, every layer and spec area in it, to keep or open elsewhere' }], 0,
       ['Open blank template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
-      ['Import paint…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }],
       ['Get a template…', '', 'getTemplate', { tip: "Where to download your car's template" }],
+      ['Import paint file…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }], 0,
       ['Car setup…', '', 'carSetup', { tip: 'Your iRacing customer number and which car this is, for the paint file names' }],
       ['Livery colours…', '', 'liveryColours', { tip: 'Every colour in this livery, to change them in one go' }],
-      ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }],
+      ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }], 0,
       ['Link iRacing paints folder…', '', 'linkFolder', { tip: 'Documents\\iRacing\\paints, so Save to iRacing and Live can write there' }],
-      ['Save to iRacing', '', 'saveIracing', { tip: 'Writes the paint and spec map into the linked folder; iRacing shows it on the car' }], 0,
+      ['Save to iRacing', '', 'saveIracing', { tip: 'Writes the paint and spec map into the linked folder; iRacing shows it on the car' }],
+      ['Send to Trading Paints', '', 'sendTp', { tip: 'Upload it to Trading Paints so other drivers see it' }], 0,
       ['Export TGA', '', 'exportTga', { tip: 'Download the paint as a TGA file, to copy into iRacing yourself' }],
       ['Export PNG', '', 'exportPng', { tip: 'Download the paint as a picture' }],
-      ['Send to Trading Paints', '', 'sendTp', { tip: 'Upload it to Trading Paints so other drivers see it' }],
     ],
     Edit: [
       ['Undo', 'Ctrl+Z', 'undo', { off: !app.canUndo }], ['Redo', 'Ctrl+Y', 'redo', { off: !app.canRedo }], 0,
