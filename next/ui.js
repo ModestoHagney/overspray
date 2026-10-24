@@ -108,6 +108,10 @@ const FINISH_TOOLS = [
   ['shape', 'Area from a shape (U)'],
   ['piece', 'A whole panel (G). Shift+click adds to the same area'],
 ];
+// tools and Properties controls that need the template's panels: greyed out without one
+const NEEDS = 'Open a blank template first';
+const PANEL_TOOLS = ['piece', 'cargrad', 'extras'];
+const PANEL_CONTROLS = '[data-act="mirror"], [data-act="separate"], [data-act="trim"], [data-act="trimClear"], #f-continues, #f-mirrorFlip, #f-mirrored';
 const MAP_TOOLS = [
   ['mpick', 'Select a panel'],
   ['hand', 'Hand (H)'],
@@ -170,13 +174,13 @@ export function initUI(app, actions, version) {
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
     ...shapeItems(), 0,
-    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), tick: !!(actions.selected() || {}).mirrored }], ['Trim to panels', '', 'trim', { off: !hasLayer() }], 0,
+    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim to panels', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
   ];
   const menuDefs = () => ({
     File: [
       ['New', '', 'newLivery'], ['Open…', '', 'open'], ['Save', 'Ctrl+S', 'save'], 0,
-      ['Load template…', '', 'pickTemplate'], ['Import paint…', '', 'pickPaint'], ['Get a template…', '', 'getTemplate'], ['Car setup…', '', 'carSetup'], ['Livery colours…', '', 'liveryColours'], ['Palettes…', '', 'openPalettes'], ['Link iRacing paints folder…', '', 'linkFolder'], ['Save to iRacing', '', 'saveIracing'], 0,
+      ['Open blank template…', '', 'pickTemplate'], ['Import paint…', '', 'pickPaint'], ['Get a template…', '', 'getTemplate'], ['Car setup…', '', 'carSetup'], ['Livery colours…', '', 'liveryColours'], ['Palettes…', '', 'openPalettes'], ['Link iRacing paints folder…', '', 'linkFolder'], ['Save to iRacing', '', 'saveIracing'], 0,
       ['Export TGA', '', 'exportTga'], ['Export PNG', '', 'exportPng'], ['Send to Trading Paints', '', 'sendTp'],
     ],
     Edit: [
@@ -188,7 +192,7 @@ export function initUI(app, actions, version) {
     ],
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
-      ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn() }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines }], ['Template lines', '', 'show:lines', { tick: app.show.lines }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh }], 0,
+      ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
@@ -198,7 +202,8 @@ export function initUI(app, actions, version) {
     if (!it) return '<hr>';
     const [label, key, act, o = {}] = it;
     const cls = 'tick' in o ? (o.tick ? 'tick' : 'notick') : '';
-    return `<button data-act="${act}" class="${cls}"${o.off ? ' disabled' : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
+    const bare = o.needs && !app.doc.template;
+    return `<button data-act="${act}" class="${cls}"${o.off || bare ? ' disabled' : ''}${bare ? ` title="${NEEDS}"` : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
   };
   function drawMenus() {
     const open = document.querySelector('.menu.open')?.dataset.menu;
@@ -210,12 +215,13 @@ export function initUI(app, actions, version) {
   // ---------- the strip, modes, hint ----------
   function drawChrome() {
     drawMenus();
-    $('modes').innerHTML = [['map', 'Map'], ['paint', 'Paint'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
-      `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
+    const bare = !app.doc.template;
+    $('modes').innerHTML = [['map', 'Map', bare && NEEDS], ['paint', 'Paint'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
+      `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''}${bare && id === 'map' ? ' disabled' : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
-    $('tools').innerHTML = strip.map(([id, name]) =>
-      `<button class="tool" data-tool="${id}" data-tip="${name}" aria-label="${name}" aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
+    $('tools').innerHTML = strip.map(([id, name, off = bare && PANEL_TOOLS.includes(id)]) =>
+      `<button class="tool" data-tool="${id}" data-tip="${off ? `${name.split(/[.(:]/)[0].trim()}: ${NEEDS.toLowerCase()}` : name}" aria-label="${name}"${off ? ' aria-disabled="true"' : ''} aria-pressed="${id === 'extras' ? !!actions.swatchAt(app.sel) : app.tool === id}">${svg(id === 'shape' ? app.shapeKind : id)}</button>`).join('');
     // the armed tool's own choices sit right beside the strip
     const opts = $('toolopts');
     if (app.tool === 'shape') {
@@ -628,12 +634,17 @@ export function initUI(app, actions, version) {
     // a swatch does not jump about when a colour is used more or less
     return [...n.keys()].slice(0, max);
   }
+  function greyPanelControls() {
+    if (app.doc.template) return;
+    for (const el of panels.props.querySelectorAll(PANEL_CONTROLS)) { el.disabled = true; (el.closest('label') || el).title = NEEDS; }
+  }
   function drawPanels() {
     const inMap = app.mode === 'map', inFinish = app.mode === 'finish';
     panels.layers.querySelector('h2').textContent = inMap ? 'Panels' : inFinish ? 'Spec map' : 'Layers';
     panels.props.querySelector('h2').textContent = inMap ? 'Panel' : inFinish ? 'Finish' : 'Properties';
     panels.layers.querySelector('.body').innerHTML = inMap ? piecesHtml() : inFinish ? finishesHtml() : layersHtml();
     panels.props.querySelector('.body').innerHTML = inMap ? pieceHtml() : inFinish ? finishHtml() : propsHtml();
+    greyPanelControls();
     drawTile();
     const cur = panels.layers.querySelector('.row.sel');
     if (inMap && cur) cur.scrollIntoView({ block: 'nearest' });
@@ -713,7 +724,7 @@ export function initUI(app, actions, version) {
     if (sw && (app.sel === 'base' || (actions.selected() || {}).type === 'fill')) sw.style.background = v;
     actions.setColour(v);
     // a picture's first colour: "Original colours" comes on (the colour boxes are left alone, one is in use)
-    if (app.mode === 'paint' && (actions.selected() || {}).type === 'image' && panels.props.querySelector('[data-act="ownColours"]:disabled')) panels.props.querySelector('.body').innerHTML = propsHtml();
+    if (app.mode === 'paint' && (actions.selected() || {}).type === 'image' && panels.props.querySelector('[data-act="ownColours"]:disabled')) { panels.props.querySelector('.body').innerHTML = propsHtml(); greyPanelControls(); }
   });
   panels.props.addEventListener('input', (e) => {
     const t = e.target;
