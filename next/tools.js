@@ -387,7 +387,7 @@ export function initTools(app, env) {
     if (app.trimming) { trimAt(p); return; }
     if (app.tool === 'piece') { fillPanel(p, e); return; }
     if (app.tool === 'text') { env.addText(p); return; }
-    if (app.tool === 'shape') { rubber = { a: p, b: p }; return; }
+    if (app.tool === 'shape') { rubber = { a: p, b: p }; if (app.shapeMenu) { app.shapeMenu = false; env.refreshChrome(); } return; }
     if (app.tool === 'stamp') { stampAt(p); return; }
     if (app.tool === 'band') {
       if (band && !band.pressed) { band.b = bandEnd(p, e); finishBand(); return; } // the second click
