@@ -505,6 +505,7 @@ let saveTimer = null, lastJson = null, saveWarned = false;
 const FIT_OK = 0.9;
 const misfit = (fit, what) => `${what} doesn't match: only ${Math.round(fit * 100)}% of panels line up. It may be for another car, or the template has changed.`;
 const MAP_FILE_MAX = 10 * 1024 * 1024; // a real map is well under 1 MB
+const LIVERY_FILE_MAX = 300 * 1024 * 1024; // a big livery is tens of MB: its template and pictures
 const SAVE_FAILED = 'Could not save in the browser: its storage may be full. Export TGA keeps a copy of the paint.';
 function projectThumb() {
   const c = document.createElement('canvas');
@@ -2158,6 +2159,45 @@ const actions = {
     change({ now: true });
   },
 
+  // A whole livery as one .overspray file: the same data the browser saves
+  // (serializeDoc), so the template, pictures and custom fonts are inside it
+  // and it opens on another computer or on the website as it was.
+  exportLivery() {
+    download(new Blob([JSON.stringify(serializeDoc(app.doc))], { type: 'application/json' }), safeName() + '.overspray');
+    ui.say(`Downloaded ${safeName()}.overspray`);
+  },
+  pickLivery: () => $('file-livery').click(),
+  async openLiveryFile(file) {
+    let data;
+    try {
+      if (file.size > LIVERY_FILE_MAX) throw new Error('too big');
+      data = JSON.parse(await file.text());
+    } catch { data = null; }
+    const format = data && typeof data.format === 'string' ? data.format : '';
+    if (format !== 'overspray/1') {
+      ui.say(/^overspray\/\d+$/.test(format) ? 'This livery is from a newer Overspray: reload the page to update, then open it again' : 'That is not an Overspray livery file', true);
+      return;
+    }
+    try {
+      const doc = await deserializeDoc(data);
+      // the livery on screen is not lost: one never saved is kept as a project first
+      const d = app.doc;
+      let kept = '';
+      if (!app.projectId && (d.layers.length || d.template)) {
+        app.projectId = Date.now().toString(36);
+        lastJson = null; // it is autosaved already, but not yet as a project
+        if (await runSave() !== false) kept = ` · The one before is in Open… as ${d.name}`;
+      }
+      // always a new project: opening a file never writes over one already here
+      await setDoc(doc, Date.now().toString(36) + 'f');
+      await runSave();
+      ui.refreshChrome();
+      ui.say(`Opened ${doc.name}${kept}`);
+    } catch {
+      ui.say('Could not open that livery file', true);
+    }
+  },
+
   // A finished paint (a TGA from the iRacing folder, or a PNG/JPG) as a
   // picture layer stretched over the whole sheet, at the bottom so new layers
   // and the template lines go over it. Not kept in the library: it is big.
@@ -2732,11 +2772,12 @@ $('stage').addEventListener('drop', (e) => {
   const f = e.dataTransfer.files[0];
   if (!f) return;
   // a kit's PSD or GIMP file is a template; any other picture dropped on the sheet is a logo
-  if (/\.(psd|xcf)$/i.test(f.name)) actions.loadTemplateFile(f);
+  if (/\.overspray$/i.test(f.name)) actions.openLiveryFile(f);
+  else if (/\.(psd|xcf)$/i.test(f.name)) actions.loadTemplateFile(f);
   else if (/\.tga$/i.test(f.name)) actions.importPaint(f); // a TGA is a paint (the browser cannot show one as a logo anyway)
   else if (app.mode === 'paint') actions.addImageFile(f, screenToDoc(...Object.values(local(e))));
 });
-for (const [id, fn] of [['file-image', (f) => actions.addImageFile(f)], ['file-paint', (f) => actions.importPaint(f)], ['file-shape', (f) => actions.addShapeFile(f)], ['file-font', (f) => actions.uploadFont(f)]]) {
+for (const [id, fn] of [['file-image', (f) => actions.addImageFile(f)], ['file-paint', (f) => actions.importPaint(f)], ['file-livery', (f) => actions.openLiveryFile(f)], ['file-shape', (f) => actions.addShapeFile(f)], ['file-font', (f) => actions.uploadFont(f)]]) {
   $(id).addEventListener('change', (e) => {
     const f = e.target.files[0];
     e.target.value = '';
@@ -2760,6 +2801,7 @@ $('file-map').addEventListener('change', (e) => {
 });
 $('btn-empty-template').addEventListener('click', actions.pickTemplate);
 $('btn-empty-paint').addEventListener('click', actions.pickPaint);
+$('btn-empty-livery').addEventListener('click', actions.pickLivery);
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 $('btn-theme').addEventListener('click', () => actions.flipTheme());
