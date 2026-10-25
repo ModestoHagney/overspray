@@ -2952,7 +2952,7 @@ boot();
 // The site's service worker holds its update until a page asks for it. This
 // page asks straight away. A page nobody has touched yet reloads once onto
 // the new version, so opening the site always gives the newest one; a page
-// someone is working in shows "Reload to update" in the bar instead, and
+// someone is working in shows "Update now" in the bar instead, and
 // never reloads by itself.
 if ('serviceWorker' in navigator) {
   let reloaded = false, working = false;
