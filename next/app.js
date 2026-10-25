@@ -2950,14 +2950,23 @@ function applyStoredTheme(theme) {
 boot();
 
 // The site's service worker holds its update until a page asks for it. This
-// page asks straight away, then reloads once on the new one, so a `git pull`
-// shows up without a manual cache clear.
+// page asks straight away. A page nobody has touched yet reloads once onto
+// the new version, so opening the site always gives the newest one; a page
+// someone is working in shows "Reload to update" in the bar instead, and
+// never reloads by itself.
 if ('serviceWorker' in navigator) {
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
+  let reloaded = false, working = false;
+  for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { working = true; }, { capture: true, once: true });
+  const reload = () => {
     if (reloaded) return;
     reloaded = true;
     flush().finally(() => location.reload());
+  };
+  const updateBtn = document.getElementById('btn-update');
+  updateBtn.addEventListener('click', reload);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (working) updateBtn.hidden = false;
+    else reload();
   });
   const take = (w) => w && w.postMessage({ type: 'SKIP_WAITING' });
   navigator.serviceWorker.register(new URL('../sw.js', import.meta.url), { updateViaCache: 'none' }).then((reg) => { // none: version.js is asked for afresh too, or a bump could go unseen // from this file, not the page: the page may be at either address
@@ -2966,5 +2975,10 @@ if ('serviceWorker' in navigator) {
       const w = reg.installing;
       if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) take(w); });
     });
+    // the browser only looks for a new version when a page opens; look again
+    // every half hour and on coming back to the tab, so the button turns up
+    const look = () => reg.update().catch(() => {});
+    setInterval(look, 30 * 60e3);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) look(); });
   }).catch(() => { /* no worker (plain http on a LAN address): the page still works */ });
 }
