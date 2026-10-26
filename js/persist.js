@@ -1,6 +1,8 @@
 // Persistence: IndexedDB autosave + File System Access directory handle storage.
 
-const DB_NAME = 'overspray';
+// The test copy (/_lab/overspray) shares the live site's origin, so it keeps
+// its own database, or testing would overwrite the live autosave.
+const DB_NAME = globalThis.location?.pathname.includes('/_lab/') ? 'overspray-lab' : 'overspray';
 const DB_VERSION = 1;
 const STORE = 'kv';
 

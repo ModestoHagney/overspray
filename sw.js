@@ -4,7 +4,10 @@
 // here; the app sees the new worker, saves, and reloads itself once to take it.
 
 importScripts('./version.js');
-const CACHE = 'overspray-' + self.VERSION;
+// The scope is in the name: the live site and the test copy (/_lab/overspray)
+// share one origin, so one must not clear the other's cache.
+const SCOPE = self.registration.scope;
+const CACHE = 'overspray-' + self.VERSION + ' ' + SCOPE;
 
 // The app's page and the icons. Every path here must exist in the repo, or
 // the worker fails to install. The rest of the app is not listed: it is
@@ -32,7 +35,8 @@ self.addEventListener('activate', (event) => {
     const names = await caches.keys();
     await Promise.all(
       names
-        .filter((n) => (n.startsWith('overspray-') || n.startsWith('clearcoat-')) && n !== CACHE) // clearcoat-: what the app was called before
+        .filter((n) => n !== CACHE && (n.startsWith('clearcoat-') // what the app was called before
+          || (n.startsWith('overspray-') && (!n.includes(' ') || n.endsWith(' ' + SCOPE))))) // no space: from before the scope was in the name
         .map((n) => caches.delete(n))
     );
     await self.clients.claim();
