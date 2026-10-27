@@ -1,69 +1,60 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// engine.js builds scratch canvases at module scope — same minimal DOM stub
-// engine.test.js uses, since nothing here touches a real canvas.
-globalThis.document = {
-  createElement: () => ({ width: 0, height: 0, getContext: () => null }),
-};
+
+// engine.js makes its canvases when loaded; nothing here draws, so a stand-in will do
+globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => null }) };
 
 const { createDoc, createFillLayer, serializeDoc, deserializeDoc } = await import('../js/engine.js');
 
-// Fill layers are the only layer kind that deserializes without a DOM Image,
-// so every round-trip here uses them.
-function docWithGroup() {
+// Three shapes, the first and last in a group "Front". Shapes load without a
+// browser Image, so they are what these tests save and load.
+function grouped() {
   const doc = createDoc();
-  const a = { ...createFillLayer('#ff0000'), id: 'L1', name: 'a' };
-  const b = { ...createFillLayer('#00ff00'), id: 'L2', name: 'b' };
-  const c = { ...createFillLayer('#0000ff'), id: 'L3', name: 'c' };
-  doc.layers = [a, b, c];
-  doc.groups = [{ id: 'G1', name: 'Sponsors', collapsed: true }];
-  a.groupId = 'G1';
-  b.groupId = 'G1';
+  doc.layers = ['#111111', '#222222', '#333333'].map((color, i) => ({ ...createFillLayer(color), id: `S${i + 1}`, name: `s${i + 1}` }));
+  doc.groups = [{ id: 'front', name: 'Front', collapsed: false, turn: 30 }];
+  doc.layers[0].groupId = doc.layers[2].groupId = 'front';
   return doc;
 }
+const membership = (doc) => doc.layers.map(l => [l.id, l.groupId]);
 
-test('a new doc starts with no groups', () => {
+test('a new livery has no groups', () => {
   assert.deepEqual(createDoc().groups, []);
 });
 
-test('groups and membership survive a serialize → deserialize round trip', async () => {
-  const back = await deserializeDoc(serializeDoc(docWithGroup()));
-  assert.deepEqual(back.groups, [{ id: 'G1', name: 'Sponsors', collapsed: true }]);
-  assert.equal(back.layers.find(l => l.id === 'L1').groupId, 'G1');
-  assert.equal(back.layers.find(l => l.id === 'L2').groupId, 'G1');
-  assert.equal(back.layers.find(l => l.id === 'L3').groupId, null);
+test('groups and who is in them come back after saving and loading', async () => {
+  const back = await deserializeDoc(JSON.parse(JSON.stringify(serializeDoc(grouped()))));
+  assert.deepEqual(back.groups, [{ id: 'front', name: 'Front', collapsed: false, turn: 30 }]);
+  assert.deepEqual(membership(back), [['S1', 'front'], ['S2', null], ['S3', 'front']]);
 });
 
-test('a group whose members all vanished is dropped on load', async () => {
-  const data = serializeDoc(docWithGroup());
-  data.layers = data.layers.filter(l => l.groupId !== 'G1'); // members lost
+test('a group left with no layers is dropped, and so is one named twice (the first stays)', async () => {
+  const data = serializeDoc(grouped());
+  data.groups.push({ id: 'front', name: 'Again', collapsed: true }, { id: 'rear', name: 'Rear' });
+  const back = await deserializeDoc(data);
+  assert.deepEqual(back.groups.map(g => g.name), ['Front']);
+  data.layers = data.layers.filter(l => !l.groupId);
+  assert.deepEqual((await deserializeDoc(data)).groups, []);
+});
+
+test('a layer naming a group that is not saved ends up in no group', async () => {
+  const data = serializeDoc(grouped());
+  data.groups = [];
   const back = await deserializeDoc(data);
   assert.deepEqual(back.groups, []);
-  assert.equal(back.layers.length, 1);
+  assert.ok(back.layers.every(l => l.groupId === null));
 });
 
-test('a groupId pointing at an undeclared group is cleared, not kept', async () => {
-  const data = serializeDoc(docWithGroup());
-  data.groups = []; // group record lost, layers still reference it
-  const back = await deserializeDoc(data);
-  assert.deepEqual(back.groups, []);
-  for (const l of back.layers) assert.equal(l.groupId, null);
-});
-
-test('duplicate group ids collapse to the first declaration', async () => {
-  const data = serializeDoc(docWithGroup());
-  data.groups.push({ id: 'G1', name: 'Impostor', collapsed: false });
-  const back = await deserializeDoc(data);
-  assert.equal(back.groups.length, 1);
-  assert.equal(back.groups[0].name, 'Sponsors');
-});
-
-test('docs saved before groups existed load with none', async () => {
-  const data = serializeDoc(docWithGroup());
+test('a save from before groups loads every layer, in no group', async () => {
+  const data = serializeDoc(grouped());
   delete data.groups;
-  for (const l of data.layers) delete l.groupId;
+  data.layers.forEach(l => delete l.groupId);
   const back = await deserializeDoc(data);
+  assert.deepEqual(membership(back), [['S1', null], ['S2', null], ['S3', null]]);
   assert.deepEqual(back.groups, []);
-  assert.equal(back.layers.length, 3);
-  for (const l of back.layers) assert.equal(l.groupId, null);
+});
+
+test('a group without a name is called "Group"; a bad group record is skipped', async () => {
+  const data = serializeDoc(grouped());
+  data.groups = [null, { name: 'no id' }, { id: 'front', name: '' }];
+  assert.deepEqual((await deserializeDoc(data)).groups, [{ id: 'front', name: 'Group', collapsed: false }]);
 });

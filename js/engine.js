@@ -1,17 +1,15 @@
-// Overspray render engine — document model, paint compositing, spec map generation.
+// Overspray's engine: the livery document, painting it, and its spec map.
 
 import { parseRegionMap } from './regions.js';
 import { SHAPES, placed, flatten, contains } from './shapes.js';
 
-export const SIZE = 2048;
+export const SIZE = 2048; // iRacing paints are 2048 px square
 
-// iRacing PBR spec map convention (per official template PSDs):
-// R = metallic, G = roughness, B = clearcoat strength.
-// `tex` materials bake a procedural per-pixel micro-texture into the spec
-// channels instead of flat values.
-// Per iRacing's docs the blue (clearcoat) channel should stay white unless
-// deliberately reduced. Every material is a *starting recipe* — per-layer
-// matParams (met/rough/clear + texture knobs) override these defaults.
+// Finishes as iRacing's spec map stores them: red says how metallic, green how
+// rough, blue how much clearcoat (iRacing's own docs: keep blue at 255 unless
+// less clearcoat is meant). These are where each finish starts; a layer's
+// matParams can change any of its numbers. A finish with tex has a sparkle
+// pattern in it (see sparklePattern), with knobs of its own.
 export const MATERIALS = {
   gloss:    { label: 'Gloss',    met: 0,   rough: 40,  clear: 255 },
   matte:    { label: 'Matte',    met: 0,   rough: 230, clear: 60  },
@@ -19,58 +17,59 @@ export const MATERIALS = {
   metallic: { label: 'Metallic', met: 180, rough: 70,  clear: 255 },
   chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 255 },
   pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 255 },
-  flake:    { label: 'Flake',    tex: 'flake',   met: 160, rough: 45,  clear: 255, density: 18, contrast: 100 },
-  glitter:  { label: 'Glitter',  tex: 'glitter', met: 170, rough: 60,  clear: 255, density: 30, scale: 4, contrast: 100 },
+  flake:    { label: 'Flake',    met: 160, rough: 45,  clear: 255, tex: 'flake', density: 18, contrast: 100 },
+  glitter:  { label: 'Glitter',  met: 170, rough: 60,  clear: 255, tex: 'glitter', density: 30, scale: 4, contrast: 100 },
 };
+const SPARKLE_KNOBS = ['density', 'scale', 'contrast'];
 
-// fresh copy of a material's editable parameters
+// a finish's numbers, as a new object a layer can change
 export function defaultParams(key) {
   const m = MATERIALS[key] || MATERIALS.gloss;
   const p = { met: m.met, rough: m.rough, clear: m.clear };
-  if (m.density !== undefined) p.density = m.density;
-  if (m.scale !== undefined) p.scale = m.scale;
-  if (m.contrast !== undefined) p.contrast = m.contrast;
+  for (const k of SPARKLE_KNOBS) if (m[k] !== undefined) p[k] = m[k];
   return p;
 }
 
-export function resolveParams(materialKey, matParams) {
-  return { ...defaultParams(materialKey), ...(matParams || {}) };
-}
+// a finish's numbers with a layer's own changes over them
+export const resolveParams = (key, own) => ({ ...defaultParams(key), ...own });
 
-// ---------- procedural spec micro-textures ----------
+// ---------- sparkle ----------
 
+// Mulberry32, a small public-domain random number generator: from the same
+// seed it gives the same numbers every time, so a sparkle comes out the same
+// in every export.
+const SEED = 0xC0FFEE;
 function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-const clamp255 = (v) => Math.max(0, Math.min(255, v));
+const clamp255 = (v) => Math.min(255, Math.max(0, v));
 // Sparkle is one pattern for the whole livery (finish.js oneSparkle): each
 // pixel says how far a fleck there pushes the finish under it toward full
 // metal (a), how much it cuts the roughness (b) and adds back (n). Kept apart
 // from the finish's own three numbers, the one pattern serves every finish it
 // lies over: 12 MB, made again only when the sparkle itself changes.
 let sparkle = null; // { key, a, b, n, light }
-// coarse sparkle: multi-pixel chips (flake's loud cousin). Each chip
-// spikes metallic and carries its OWN roughness, so different chips
-// catch the light at different angles — the tumbling-glitter look.
+// Glitter: square chips a few pixels wide, laid at random. Each flashes metal
+// by an amount of its own and adds roughness of its own, so the chips catch
+// the light at different angles, as tumbling glitter does.
 // each(x, y, side, flash, roughness added), in the order they are laid
 function glitterChips(p, each) {
-  const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
-  const k = (p.contrast ?? 100) / 100;
-  const size = Math.max(2, Math.round(p.scale ?? 4));
-  const density = Math.max(1, Math.min(80, p.density ?? 30));
-  const count = Math.round((SIZE * SIZE * (density / 100)) / (size * size));
+  const rand = mulberry32(SEED);
+  const strength = (p.contrast ?? 100) / 100;
+  const side = Math.max(2, Math.round(p.scale ?? 4));
+  const cover = Math.max(1, Math.min(80, p.density ?? 30)) / 100; // of the sheet, were the chips laid edge to edge
+  const count = Math.round(SIZE * SIZE * cover / (side * side));
   for (let c = 0; c < count; c++) {
-    const x = Math.floor(rand() * SIZE);
-    const y = Math.floor(rand() * SIZE);
-    const flash = rand() * k;                       // how hard this chip flashes
+    const x = Math.floor(rand() * SIZE), y = Math.floor(rand() * SIZE);
+    const flash = rand() * strength;
     const n = Math.round(rand() * 30);
-    each(x, y, Math.max(1, Math.round(size * (0.7 + rand() * 0.6))), flash, n);
+    each(x, y, Math.max(1, Math.round(side * (0.7 + rand() * 0.6))), flash, n);
   }
 }
 function sparklePattern(kind, p) {
@@ -79,14 +78,12 @@ function sparklePattern(kind, p) {
   sparkle = null; // the old one goes before the new one is made
   const N = SIZE * SIZE, a = new Uint8Array(N), b = new Uint8Array(N).fill(255), n = new Uint8Array(N);
   if (kind === 'flake') {
-    const rand = mulberry32(0xC0FFEE); // seeded — identical output every export
-    const k = (p.contrast ?? 100) / 100;
-    // sparkle speckle: random pixels spike metallic and drop roughness
-    const density = Math.max(0.01, (p.density ?? 18) / 100);
-    const thr = 1 - density;
+    // Flake: single pixels at random, pushed toward full metal and smoothed
+    const rand = mulberry32(SEED), strength = (p.contrast ?? 100) / 100;
+    const share = Math.max(0.01, (p.density ?? 18) / 100), cut = 1 - share; // of the pixels
     for (let i = 0; i < N; i++) {
-      const f = rand();
-      const s = (f > thr ? (f - thr) / density : 0) * k;
+      const r = rand();
+      const s = r > cut ? (r - cut) / share * strength : 0;
       a[i] = Math.round(255 * s);
       b[i] = Math.round(255 * (1 - 0.85 * s));
     }
@@ -138,22 +135,25 @@ export function sparkleLights(kind, p) {
   return pat.light;
 }
 
-let nextId = 1;
-export function newId() { return 'L' + (nextId++) + '-' + Date.now().toString(36); }
+// ---------- the document ----------
+
+let idCount = 0;
+// a layer id no other has: L<count>-<the time in base 36>
+export const newId = () => `L${++idCount}-${Date.now().toString(36)}`;
 
 export function createDoc() {
   return {
     name: 'untitled livery',
-    target: 'car',       // what this project paints: 'car' | 'helmet' | 'suit'
-    customNumber: false, // iRacing Custom Number paints export car_num_<id>.tga
-    car: null,           // the car's folder inside the iRacing paints folder
-    baseColor: '#1a6cff',
+    target: 'car',              // what it paints: 'car', 'helmet' or 'suit'
+    customNumber: false,        // a Custom Number paint: exported as car_num_<id>.tga
+    car: null,                  // the car's folder inside the iRacing paints folder
+    baseColor: '#1a6cff',       // the base coat, and its finish
     baseMaterial: 'gloss',
     baseMatParams: null,
-    layers: [],          // bottom → top: shapes (fills), text and pictures
-    groups: [],          // flat layer groups: { id, name, collapsed, turn }; members carry layer.groupId; turn: the angle its box stands at, in degrees
-    template: null,      // { img, src } — viewport reference only
-    customFonts: [],            // { name, data (base64) } — uploaded fonts travel with the project
+    layers: [],                 // bottom → top: shapes (fills), text and pictures
+    groups: [],                 // flat layer groups: { id, name, collapsed, turn }; members carry layer.groupId; turn: the angle its box stands at, in degrees
+    template: null,             // { img, src }: the car's template, shown on screen, never painted
+    customFonts: [],            // fonts the user added, { name, data (base64) }, saved with the livery
     googleFonts: [],            // names of Google fonts added by name, beyond the built-in list
     finishRules: [],            // { color, material, params? }: every shape or text of that colour gets that finish (see finish.js)
     regionMap: null,            // parsed overspray-regions/1 map (see regions.js)
@@ -163,85 +163,56 @@ export function createDoc() {
   };
 }
 
+// what every new layer starts with
+const layerBase = (type, name) => ({ id: newId(), type, name, visible: true, opacity: 1, material: 'gloss' });
+
+// a picture layer in the middle of the sheet, made small enough to fit half of it
 export function createImageLayer(img, src, name) {
-  // start centered, scaled to fit within half the sheet
-  const fit = Math.min(1, (SIZE / 2) / Math.max(img.width, img.height));
   return {
-    id: newId(),
-    type: 'image',
-    name: name || 'image',
-    visible: true,
-    opacity: 1,
-    material: 'gloss',
+    ...layerBase('image', name || 'image'),
     fx: null,          // a shadow, when it has one: { shadow, shadowDX, shadowDY, shadowColor }
     img, src,
-    x: SIZE / 2,
-    y: SIZE / 2,
-    scale: fit,
-    scaleY: null,  // non-uniform Y scale; null = follow scale (uniform)
-    rotation: 0,   // degrees
-    flipH: false,
-    flipV: false,
+    x: SIZE / 2, y: SIZE / 2,
+    scale: Math.min(1, SIZE / 2 / Math.max(img.width, img.height)),
+    scaleY: null,      // a height scale of its own; null: the same as scale
+    rotation: 0,       // in degrees
+    flipH: false, flipV: false,
   };
 }
 
 // full local→doc transform for a picture or text layer; scaleY = null means
 // "follow scale"
-export function layerMatrix(l) {
-  return new DOMMatrix()
-    .translate(l.x, l.y)
-    .rotate(l.rotation)
-    .scale(l.scale * (l.flipH ? -1 : 1), (l.scaleY ?? l.scale) * (l.flipV ? -1 : 1))
-    .scale(1 / (l.img?.res || 1)); // text drawn at more pixels than its size, to stay sharp scaled up
-}
+export const layerMatrix = (l) => new DOMMatrix()
+  .translate(l.x, l.y)
+  .rotate(l.rotation)
+  .scale(l.scale * (l.flipH ? -1 : 1), (l.scaleY ?? l.scale) * (l.flipV ? -1 : 1))
+  .scale(1 / (l.img?.res || 1)); // text drawn at more pixels than its size, to stay sharp scaled up
 
+// fonts every computer has, offered for text
 export const TEXT_FONTS = ['Arial Black', 'Impact', 'Georgia', 'Courier New', 'Verdana', 'Trebuchet MS'];
 
-// curated livery-friendly Google Fonts — loaded on demand
-export const GOOGLE_FONTS = [
-  'Anton', 'Archivo Black', 'Bebas Neue', 'Black Ops One', 'Bungee', 'Faster One',
-  'Monoton', 'Orbitron', 'Oswald', 'Permanent Marker', 'Racing Sans One', 'Russo One',
-];
+// Google fonts offered for liveries, fetched the first time one is used
+export const GOOGLE_FONTS = ['Anton', 'Archivo Black', 'Bebas Neue', 'Black Ops One', 'Bungee', 'Faster One',
+  'Monoton', 'Orbitron', 'Oswald', 'Permanent Marker', 'Racing Sans One', 'Russo One'];
 
-// decode a stored custom font (base64) and register it with the page;
-// throws if the data doesn't parse as a font
+// Make a font saved with the livery (base64) usable on the page. Throws when
+// the data is not a font.
 export async function registerCustomFont(name, base64) {
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const face = new FontFace(name, bytes.buffer);
-  await face.load();
-  document.fonts.add(face);
+  const bytes = Uint8Array.from(atob(base64), ch => ch.charCodeAt(0));
+  document.fonts.add(await new FontFace(name, bytes.buffer).load());
 }
 
-// text layer — rasterized into img/src so the whole image pipeline
-// (transform, hit-test, materials, thumbnails) treats it like any image
+// A text layer. Its letters are drawn into a picture (img, src), so moving,
+// picking, finishes and thumbnails treat it just as they treat a picture.
 export function createTextLayer() {
   const layer = {
-    id: newId(),
-    type: 'text',
-    name: 'text',
-    visible: true,
-    opacity: 1,
-    material: 'gloss',
+    ...layerBase('text', 'text'),
     img: null, src: null,
-    text: 'TEXT',
-    font: 'Arial Black',
-    fontSize: 160,
-    textColor: '#ffffff',
-    outlineColor: '#000000',
-    outlineWidth: 0,
-    italic: false,
-    letterSpacing: 0,
-    curve: 0,          // arc bend in degrees; 0 = straight, + arches up, − arches down
+    text: 'TEXT', font: 'Arial Black', fontSize: 160, italic: false, letterSpacing: 0,
+    textColor: '#ffffff', outlineColor: '#000000', outlineWidth: 0,
+    curve: 0,          // bent along an arc of this many degrees: 0 straight, above 0 arching up, below 0 down
     fx: null,          // a shadow, when it has one: { shadow, shadowDX, shadowDY, shadowColor }
-    x: SIZE / 2,
-    y: SIZE / 2,
-    scale: 1,
-    scaleY: null,
-    rotation: 0,
-    flipH: false,
-    flipV: false,
+    x: SIZE / 2, y: SIZE / 2, scale: 1, scaleY: null, rotation: 0, flipH: false, flipV: false,
   };
   regenerateText(layer);
   return layer;
@@ -260,130 +231,113 @@ export const textRes = (layer, w, h) => Math.max(1, Math.min(Math.max(Math.abs(l
 // re-rasterize after any text property change, or after it is scaled; the
 // canvas is sized to the text so the layer's center (x, y) stays put
 export function regenerateText(layer) {
+  const within = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const lines = String(layer.text ?? '').split('\n');
-  const size = Math.max(40, Math.min(400, layer.fontSize || 160));
-  const outline = Math.max(0, Math.min(30, layer.outlineWidth || 0));
+  const size = within(layer.fontSize || 160, 40, 400);
+  const outline = within(layer.outlineWidth || 0, 0, 30);
+  const gap = within(layer.letterSpacing || 0, -40, 40);
   const fontStr = textFont(layer, size);
-  const spacing = `${Math.max(-40, Math.min(40, layer.letterSpacing || 0))}px`;
-  const lineH = size * Math.max(60, Math.min(300, layer.lineSpacing || 120)) / 100;
+  const lineH = size * within(layer.lineSpacing || 120, 60, 300) / 100;
   const align = layer.align === 'left' || layer.align === 'right' ? layer.align : 'center'; // lines of different lengths: which side they share
-  const curve = Math.max(-180, Math.min(180, Number(layer.curve) || 0));
-  const margin = Math.ceil(outline) + Math.ceil(size * 0.15); // outline + italic overhang
+  const curve = within(Number(layer.curve) || 0, -180, 180);
+  const margin = Math.ceil(outline) + Math.ceil(size * 0.15); // room for the outline and for slanted letters
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
   let W, k; // the text's width, and the pixels it is drawn at per unit of its size
   const size2 = (w, h) => { W = w; k = textRes(layer, w, h); c.width = Math.ceil(w * k); c.height = Math.ceil(h * k); ctx.scale(k, k); };
+  const measuring = (spacing) => {
+    ctx.font = fontStr;
+    if (spacing && 'letterSpacing' in ctx) ctx.letterSpacing = spacing;
+  };
+  // the drawing settings, set once the canvas is sized (sizing clears them)
+  const pen = (spacing, textAlign) => {
+    measuring(spacing);
+    Object.assign(ctx, {
+      textAlign, textBaseline: 'middle', lineJoin: 'round',
+      fillStyle: layer.textColor || '#ffffff', strokeStyle: layer.outlineColor || '#000000',
+      lineWidth: outline * 2, // the stroke is centred on the letters' edge: half of it shows
+    });
+  };
+  const ink = (str, x, y) => {
+    if (outline > 0) ctx.strokeText(str, x, y);
+    ctx.fillText(str, x, y);
+  };
   if (!curve) {
-    // straight text — original rendering path
-    ctx.font = fontStr;
-    if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
-    const maxW = Math.max(1, ...lines.map(t => ctx.measureText(t).width));
-    size2(Math.ceil(maxW) + margin * 2, Math.ceil(lineH * lines.length) + margin * 2);
-    // resizing reset the context — set everything again
-    ctx.font = fontStr;
-    if ('letterSpacing' in ctx) ctx.letterSpacing = spacing;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.fillStyle = layer.textColor || '#ffffff';
-    ctx.strokeStyle = layer.outlineColor || '#000000';
-    ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
+    measuring(`${gap}px`);
+    const widest = Math.max(1, ...lines.map(t => ctx.measureText(t).width));
+    size2(Math.ceil(widest) + margin * 2, Math.ceil(lineH * lines.length) + margin * 2);
+    pen(`${gap}px`, align);
     const x = align === 'left' ? margin : align === 'right' ? W - margin : W / 2;
-    lines.forEach((line, i) => {
-      const y = margin + lineH * (i + 0.5);
-      if (outline > 0) ctx.strokeText(line, x, y);
-      ctx.fillText(line, x, y);
-    });
+    lines.forEach((line, i) => ink(line, x, margin + lineH * (i + 0.5)));
   } else {
-    // curved text — glyphs laid glyph-by-glyph along a circular arc whose
-    // total angle is `curve` degrees. Positive arches upward (bends along the
-    // top of a circle), negative arches downward. Letter-spacing gaps are
-    // inserted manually between glyphs so measurement stays exact.
-    const spacingPx = Math.max(-40, Math.min(40, layer.letterSpacing || 0));
-    const theta = Math.abs(curve) * Math.PI / 180;
-    const dir = curve > 0 ? 1 : -1;
-    ctx.font = fontStr;
-    const lineData = lines.map(text => {
-      const chars = Array.from(text);
+    // Each letter is placed by itself along an arc spanning `curve` degrees,
+    // bowing up for a curve above 0 and down below it. The letter spacing is
+    // added by hand between letters, so each letter's measured width holds.
+    const arc = Math.abs(curve) * Math.PI / 180, dir = Math.sign(curve);
+    measuring(null);
+    const rows = lines.map((text) => {
+      const chars = [...text];
       const widths = chars.map(ch => ctx.measureText(ch).width);
-      const total = widths.reduce((a, b) => a + b, 0) + spacingPx * Math.max(0, chars.length - 1);
-      return { chars, widths, total };
+      const length = widths.reduce((a, b) => a + b, 0) + gap * Math.max(0, chars.length - 1);
+      return { chars, widths, length, R: Math.max(length, 1) / arc };
     });
-    // arc bounding box: chord extent horizontally, sagitta (arc rise) vertically
-    let maxW = 1, maxSag = 0;
-    for (const ld of lineData) {
-      const R = Math.max(ld.total, 1) / theta;
-      const half = theta / 2;
-      const xExt = (half >= Math.PI / 2 ? R : R * Math.sin(half)) + size;
-      const sag = R * (1 - Math.cos(Math.min(half, Math.PI)));
-      maxW = Math.max(maxW, xExt * 2);
-      maxSag = Math.max(maxSag, sag);
+    // how far an arc of radius R bows from the straight line across its ends
+    const bow = (R) => R * (1 - Math.cos(Math.min(arc / 2, Math.PI)));
+    let widest = 1, deepest = 0;
+    for (const { R } of rows) {
+      const across = arc / 2 >= Math.PI / 2 ? R : R * Math.sin(arc / 2); // half the arc's width
+      widest = Math.max(widest, (across + size) * 2);
+      deepest = Math.max(deepest, bow(R));
     }
-    size2(Math.ceil(maxW) + margin * 2, Math.ceil(lineH * lines.length + maxSag) + margin * 2);
-    // resizing reset the context — set everything again
-    ctx.font = fontStr;
-    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; // gaps applied manually
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.fillStyle = layer.textColor || '#ffffff';
-    ctx.strokeStyle = layer.outlineColor || '#000000';
-    ctx.lineWidth = outline * 2; // half the stroke falls outside the glyph
-    lineData.forEach((ld, i) => {
-      if (!ld.chars.length) return;
-      const R = Math.max(ld.total, 1) / theta;
-      const sag = R * (1 - Math.cos(Math.min(theta / 2, Math.PI)));
-      // center each line's arc vertically on its nominal line slot
-      const lineY = margin + maxSag / 2 + lineH * (i + 0.5) - dir * sag / 2;
-      let s = -ld.total / 2; // arc-length cursor from the line's midpoint
-      ld.chars.forEach((ch, j) => {
-        const phi = (s + ld.widths[j] / 2) / R; // signed angle from arc midpoint
+    size2(Math.ceil(widest) + margin * 2, Math.ceil(lineH * lines.length + deepest) + margin * 2);
+    pen('0px', 'center');
+    rows.forEach(({ chars, widths, length, R }, i) => {
+      if (!chars.length) return;
+      const y0 = margin + deepest / 2 + lineH * (i + 0.5) - dir * bow(R) / 2; // each arc centred on its line
+      let along = -length / 2; // distance along the arc, from its middle
+      chars.forEach((ch, j) => {
+        const a = (along + widths[j] / 2) / R; // the letter's angle from the arc's middle
         ctx.save();
-        ctx.translate(W / 2 + R * Math.sin(phi), lineY + dir * R * (1 - Math.cos(phi)));
-        ctx.rotate(dir * phi);
-        if (outline > 0) ctx.strokeText(ch, 0, 0);
-        ctx.fillText(ch, 0, 0);
+        ctx.translate(W / 2 + R * Math.sin(a), y0 + dir * R * (1 - Math.cos(a)));
+        ctx.rotate(dir * a);
+        ink(ch, 0, 0);
         ctx.restore();
-        s += ld.widths[j] + spacingPx;
+        along += widths[j] + gap;
       });
     });
   }
   c.res = k; // layerMatrix shrinks it back by this
   layer.img = c;
   layer.src = c.toDataURL('image/png');
-  delete layer._albedo; // shader-ball albedo cache is stale now
 }
 
-// solid-color material patch — a resizable shape carrying its own color
-// and material, so finishes (pearl, flake…) can be placed without an image
+// A shape layer: an outline filled with a colour (or a fade) and a finish of
+// its own, in the box rx, ry, rw, rh, so a finish can go down without a picture.
 export function createFillLayer(color = '#e8e6e1') {
   return {
-    id: newId(),
-    type: 'fill',
-    name: 'fill',
-    visible: true,
-    opacity: 1,
-    material: 'gloss',
+    ...layerBase('fill', 'fill'),
     color,
     shape: 'rect',         // rect | ellipse | triangle | path
     pts: null,             // shape 'path': the outline, [{ x, y, c? }] in doc space (see shapes.js)
-    fillType: 'solid',     // solid | linear | radial
-    color2: '#101114',     // gradient end color
-    colorMid: null,        // optional third gradient stop (hex) — null = two-stop
-    midPos: 0.5,           // mid stop position 0–1
+    fillType: 'solid',     // or a fade: 'linear' (straight) or 'radial' (round)
+    color2: '#101114',     // the colour a fade ends in
+    colorMid: null,        // older saves: one colour on the way, at midPos (0–1) along
+    midPos: 0.5,
     stops: [],             // colours it fades through on the way, [{ color, at: 0–1 }]; these replace colorMid
-    gradAngle: 0,          // linear gradient angle in degrees, 0 = left → right
+    gradAngle: 0,          // which way a straight fade runs, in degrees: 0 is left to right
     x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false,
-    rx: SIZE / 2 - 300, ry: SIZE / 2 - 200, rw: 600, rh: 400,
+    rx: SIZE / 2 - 300, ry: SIZE / 2 - 200, rw: 600, rh: 400, // its box, 600 × 400 in the middle
   };
 }
 
-// shape silhouette for a fill layer, built inside an arbitrary rect (the
-// layer's region, or a thumbnail box). A 'path' shape is drawn from its own
+// A shape's outline as a Path2D, made to fill the box rx, ry, rw, rh (the
+// layer's own, or a thumbnail's). A 'path' shape is drawn from its own
 // points instead (doc space; the rect is then just its bounding box): each
 // point may carry `c`, the bend handle of the line leaving it.
 export function fillShapePath(shape, rx, ry, rw, rh, pts) {
   const p = new Path2D();
+  const corners = (...q) => { q.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); };
+  const at = (u, v) => [rx + u * rw, ry + v * rh]; // u, v: 0–1 across and down the box
   if (shape === 'path' && Array.isArray(pts) && pts.length >= 3) {
     // a point marked `m` starts a separate piece of the same shape; each
     // piece closes on its own first point
@@ -396,43 +350,22 @@ export function fillShapePath(shape, rx, ry, rw, rh, pts) {
     });
     return p;
   }
-  switch (shape) {
-    case 'ellipse':
-      p.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
-      break;
-    case 'triangle': // isoceles, pointing up
-      p.moveTo(rx + rw / 2, ry);
-      p.lineTo(rx + rw, ry + rh);
-      p.lineTo(rx, ry + rh);
-      p.closePath();
-      break;
-    case 'diamond':
-      p.moveTo(rx + rw / 2, ry);
-      p.lineTo(rx + rw, ry + rh / 2);
-      p.lineTo(rx + rw / 2, ry + rh);
-      p.lineTo(rx, ry + rh / 2);
-      p.closePath();
-      break;
-    case 'stripe': { // parallelogram slanted 45°, clamped to stay in the region
-      const sh = Math.min(rh, rw);
-      p.moveTo(rx + sh, ry);
-      p.lineTo(rx + rw, ry);
-      p.lineTo(rx + rw - sh, ry + rh);
-      p.lineTo(rx, ry + rh);
-      p.closePath();
-      break;
-    }
-    default:
-      p.rect(rx, ry, rw, rh);
-  }
+  if (shape === 'ellipse') p.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+  else if (shape === 'triangle') corners(at(0.5, 0), at(1, 1), at(0, 1)); // pointing up
+  else if (shape === 'diamond') corners(at(0.5, 0), at(1, 0.5), at(0.5, 1), at(0, 0.5));
+  else if (shape === 'stripe') { // leaning at 45°, kept inside the box
+    const lean = Math.min(rw, rh);
+    corners([rx + lean, ry], [rx + rw, ry], [rx + rw - lean, ry + rh], [rx, ry + rh]);
+  } else p.rect(rx, ry, rw, rh);
   return p;
 }
 
-// solid color or a color → color2 gradient spanning the given rect
+// What a shape is filled with: its colour, or a fade across its box (or
+// between the two points it was placed with).
 export function fillPaintStyle(ctx, layer, rx, ry, rw, rh) {
-  const color = layer.color || '#ffffff';
-  if ((layer.fillType || 'solid') === 'solid') return color;
-  const cx = rx + rw / 2, cy = ry + rh / 2;
+  const first = layer.color || '#ffffff';
+  if (!layer.fillType || layer.fillType === 'solid') return first;
+  const mx = rx + rw / 2, my = ry + rh / 2;
   let g;
   const A = layer.fadeFrom, B = layer.fadeTo;
   if (A && B) {
@@ -442,15 +375,14 @@ export function fillPaintStyle(ctx, layer, rx, ry, rw, rh) {
       ? ctx.createRadialGradient(A.x, A.y, 0, A.x, A.y, Math.max(1, Math.hypot(B.x - A.x, B.y - A.y)))
       : ctx.createLinearGradient(A.x, A.y, B.x, B.y);
   } else if (layer.fillType === 'radial') {
-    // region center out to the farthest corner
-    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(rw, rh) / 2);
+    g = ctx.createRadialGradient(mx, my, 0, mx, my, Math.hypot(rw, rh) / 2); // from the middle out to the corners
   } else {
-    const a = (layer.gradAngle || 0) * Math.PI / 180;
-    const dx = Math.cos(a), dy = Math.sin(a);
-    const half = (Math.abs(dx) * rw + Math.abs(dy) * rh) / 2;
-    g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+    // straight across the box at gradAngle, reaching its far corners
+    const rad = (layer.gradAngle || 0) * Math.PI / 180, ux = Math.cos(rad), uy = Math.sin(rad);
+    const reach = (Math.abs(ux) * rw + Math.abs(uy) * rh) / 2;
+    g = ctx.createLinearGradient(mx - ux * reach, my - uy * reach, mx + ux * reach, my + uy * reach);
   }
-  g.addColorStop(0, color);
+  g.addColorStop(0, first);
   const mids = fadeStops(layer);
   for (const s of mids) g.addColorStop(Math.max(0.01, Math.min(0.99, s.at)), s.color);
   // fading to nothing ends in the last colour it passed through, see-through
@@ -734,14 +666,10 @@ function drawCopies(ctx, layer) {
   });
 }
 
-// ---------- compositing ----------
+// ---------- painting ----------
 
-const paintCanvas = document.createElement('canvas');
-paintCanvas.width = paintCanvas.height = SIZE;
-const specCanvas = document.createElement('canvas');
-specCanvas.width = specCanvas.height = SIZE;
-const scratch = document.createElement('canvas');
-scratch.width = scratch.height = SIZE;
+const sheet = () => Object.assign(document.createElement('canvas'), { width: SIZE, height: SIZE });
+const paintCanvas = sheet(), specCanvas = sheet(), scratch = sheet();
 // The paint sheet and the scratch are read back many times for one picture
 // (the linear-light mix reads both for every layer). Told so up front, the
 // browser keeps them where reading is cheap, instead of fetching each read
@@ -770,8 +698,8 @@ function drawLayerContent(ctx, layer) {
     }
     return;
   }
-  if (layer.type === 'fill') {
-    const rx = layer.rx ?? 0, ry = layer.ry ?? 0, rw = layer.rw ?? SIZE, rh = layer.rh ?? SIZE;
+  if (isRegionLayer(layer)) {
+    const [rx, ry, rw, rh] = [layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE];
     ctx.save();
     if (layer.flipH || layer.flipV) {
       // flip the shape and its gradient within the layer's own rect, so a
@@ -784,21 +712,24 @@ function drawLayerContent(ctx, layer) {
     const outline = fillShapePath(layer.shape, rx, ry, rw, rh, layer.pts);
     ctx.fill(outline);
     ctx.restore();
-  } else {
-    ctx.save();
-    const m = layerMatrix(layer);
-    ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-    ctx.drawImage(layer.img, -layer.img.width / 2, -layer.img.height / 2);
-    ctx.restore();
+    return;
   }
+  // a picture or text: placed by its matrix, about its middle
+  const { a, b, c, d, e, f } = layerMatrix(layer), { img } = layer;
+  ctx.save();
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  ctx.restore();
 }
 
 // A layer's trim as a list of windows, each a list of { x, y }
 export const clipPolys = (layer) => (Array.isArray(layer.clip) ? layer.clip.filter(p => Array.isArray(p) && p.length >= 3) : []);
 
+// One layer drawn onto ctx: trimmed, carried, at its opacity and blend, with
+// its shadow. forSpec: for the spec map, where only its outline matters.
 export function drawLayer(ctx, layer, forSpec = false) {
   // a shadow is for text and pictures, and for the paint only: it is not part of the design's own outline
-  const fx = layer.fx;
+  const { fx } = layer;
   const doShadow = !forSpec && fx && fx.shadow > 0 && layer.img && (layer.type === 'image' || layer.type === 'text');
   ctx.save();
   // a copy carried across a seam is trimmed to the panel it is carried onto
@@ -831,28 +762,30 @@ export function drawLayer(ctx, layer, forSpec = false) {
   if (doShadow) {
     // the layer is drawn once into a buffer; drawn fully off-canvas from
     // there, only its shadow lands in view, beneath the layer itself
-    if (!fxScratch) { fxScratch = document.createElement('canvas'); fxScratch.width = fxScratch.height = SIZE; }
-    const rctx = fxScratch.getContext('2d');
-    rctx.clearRect(0, 0, SIZE, SIZE);
-    drawCopies(rctx, layer);
+    fxScratch ??= sheet();
+    const buf = fxScratch.getContext('2d');
+    buf.clearRect(0, 0, SIZE, SIZE);
+    drawCopies(buf, layer);
+    // drawn from the buffer a whole sheet off to the left, with the shadow
+    // pushed a sheet back to the right: only the shadow lands on the sheet
     ctx.save();
-    ctx.shadowColor = fx.shadowColor || '#000000';
-    ctx.shadowBlur = Math.max(0, Math.min(60, fx.shadow));
-    ctx.shadowOffsetX = SIZE + (fx.shadowDX ?? 8);
-    ctx.shadowOffsetY = fx.shadowDY ?? 8;
+    Object.assign(ctx, {
+      shadowColor: fx.shadowColor || '#000000',
+      shadowBlur: Math.max(0, Math.min(60, fx.shadow)),
+      shadowOffsetX: SIZE + (fx.shadowDX ?? 8),
+      shadowOffsetY: fx.shadowDY ?? 8,
+    });
     ctx.drawImage(fxScratch, -SIZE, 0);
     ctx.restore();
-    ctx.drawImage(fxScratch, 0, 0);
+    ctx.drawImage(fxScratch, 0, 0); // and the layer over it
   } else {
     drawCopies(ctx, layer);
   }
   ctx.restore();
 }
 
-// a Finish-mode area exists solely in the finish map
-function inPaintMap(layer) {
-  return layer.visible && !layer.specOnly;
-}
+// shown in the paint: visible, and not an area that is only in the spec map
+const inPaintMap = (layer) => layer.visible && !layer.specOnly;
 
 // the extra colours' squares go over everything, so iRacing reads the colours
 // set for them; the pitboard's colour goes under the layers, as its background
@@ -998,23 +931,18 @@ function paintLayerInto(ctx, layer) {
   sctx.clearRect(0, 0, SIZE, SIZE);
 }
 function paintLayerPaint(ctx, layer) {
-  if (linearEdges && edgesInLinear(layer)) {
-    const sctx = scratch.getContext('2d');
-    sctx.clearRect(0, 0, SIZE, SIZE);
-    drawLayer(sctx, layer, false);
-    mixLinearInto(ctx, scratch, paintBox(layer));
-    return;
-  }
-  drawLayer(ctx, layer, false);
+  if (!linearEdges || !edgesInLinear(layer)) return drawLayer(ctx, layer, false);
+  const s = scratch.getContext('2d');
+  s.clearRect(0, 0, SIZE, SIZE);
+  drawLayer(s, layer, false);
+  mixLinearInto(ctx, scratch, paintBox(layer));
 }
 
 // The given layers painted in stack order over a transparent sheet, exactly
 // as they appear in the paint (tint, opacity, effects and trim included) —
 // what Merge bakes into one image. Material-only layers paint nothing.
 export function paintLayers(layers, { linearEdges: lin = false } = {}) {
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
-  const ctx = c.getContext('2d');
+  const c = sheet(), ctx = c.getContext('2d');
   linearEdges = lin; // where one of them lies over another, as in renderPaint
   try {
     for (const l of layers) if (inPaintMap(l)) paintLayerInto(ctx, l);
@@ -1027,70 +955,59 @@ export function paintLayers(layers, { linearEdges: lin = false } = {}) {
 // for what goes to the car, and for the screen once an edit has settled.
 export function renderPaint(doc, { linearEdges: lin = false } = {}) {
   const ctx = paintCanvas.getContext('2d');
-  ctx.clearRect(0, 0, SIZE, SIZE);
-  paintBase(ctx, doc);
-  paintSwatches(ctx, doc, true);
   linearEdges = lin;
   try {
-    for (const layer of doc.layers) {
-      if (inPaintMap(layer)) paintLayerInto(ctx, layer);
-    }
+    paintUnder(ctx, doc, doc.layers);
   } finally { linearEdges = false; }
   paintSwatches(ctx, doc);
   return paintCanvas;
 }
 
-// ---------- drag composite cache ----------
-// While layers are being dragged, everything beneath and above them is
-// static. buildDragCache pre-renders those two slabs once; renderPaintWithDrag
-// then draws slab → moving layers → slab per frame instead of recompositing
-// the whole stack. Returns null (caller falls back to renderPaint) when the
-// moving layers aren't a contiguous run of the paint-visible stack.
+// a clear sheet, the base coat, the pitboard's colour, then those of `layers`
+// shown in the paint
+function paintUnder(ctx, doc, layers) {
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  paintBase(ctx, doc);
+  paintSwatches(ctx, doc, true);
+  for (const l of layers) if (inPaintMap(l)) paintLayerInto(ctx, l);
+}
 
-// The slabs are made for each drag and go with the cache once it is let go (32 MB).
+// ---------- painting while layers are dragged ----------
+// The layers under and over the ones being dragged stay put, so they are
+// painted once into two sheets, kept for the drag only (32 MB). Each frame is
+// then those two sheets with the moving layers between them.
+
 const slab = () => {
-  const c = document.createElement('canvas');
-  c.width = c.height = SIZE;
+  const c = sheet();
   c.getContext('2d', { willReadFrequently: true }); // (they are mixed into by the same reads)
   return c;
 };
 
+// → { movingIds, below, above }, or null (paint the whole stack instead) when
+// a layer that stays sits among the moving ones, or a blend above them needs
+// what is under it
 export function buildDragCache(doc, movingIds) {
-  const idxs = [];
-  doc.layers.forEach((l, i) => { if (movingIds.has(l.id)) idxs.push(i); });
-  if (!idxs.length) return null;
-  const lo = idxs[0], hi = idxs[idxs.length - 1];
-  for (let i = lo; i <= hi; i++) {
-    const l = doc.layers[i];
-    if (!movingIds.has(l.id) && inPaintMap(l)) return null; // static layer interleaved
-  }
-
+  const at = doc.layers.flatMap((l, i) => (movingIds.has(l.id) ? [i] : []));
+  if (!at.length) return null;
+  const lo = at[0], hi = at[at.length - 1];
+  if (doc.layers.slice(lo, hi + 1).some(l => !movingIds.has(l.id) && inPaintMap(l))) return null;
   const below = slab(), above = slab();
-  const bctx = below.getContext('2d');
-  bctx.clearRect(0, 0, SIZE, SIZE);
-  paintBase(bctx, doc);
-  paintSwatches(bctx, doc, true);
-  for (let i = 0; i < lo; i++) {
-    if (inPaintMap(doc.layers[i])) paintLayerInto(bctx, doc.layers[i]);
-  }
+  paintUnder(below.getContext('2d'), doc, doc.layers.slice(0, lo));
   const actx = above.getContext('2d');
-  actx.clearRect(0, 0, SIZE, SIZE);
-  for (let i = hi + 1; i < doc.layers.length; i++) {
-    if (doc.layers[i].blend) return null; // a blend above needs what is under it: no shortcut
-    if (inPaintMap(doc.layers[i])) paintLayerInto(actx, doc.layers[i]);
+  for (const l of doc.layers.slice(hi + 1)) {
+    if (l.blend) return null;
+    if (inPaintMap(l)) paintLayerInto(actx, l);
   }
   paintSwatches(actx, doc);
   return { movingIds, below, above };
 }
 
-export function renderPaintWithDrag(doc, cache) {
+export function renderPaintWithDrag(doc, { movingIds, below, above }) {
   const ctx = paintCanvas.getContext('2d');
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.drawImage(cache.below, 0, 0);
-  for (const layer of doc.layers) {
-    if (cache.movingIds.has(layer.id) && inPaintMap(layer)) paintLayerInto(ctx, layer);
-  }
-  ctx.drawImage(cache.above, 0, 0);
+  ctx.drawImage(below, 0, 0);
+  for (const l of doc.layers) if (movingIds.has(l.id) && inPaintMap(l)) paintLayerInto(ctx, l);
+  ctx.drawImage(above, 0, 0);
   return paintCanvas;
 }
 
@@ -1107,14 +1024,15 @@ function byCopyFinish(l) {
   });
   return [...by.values()];
 }
+// The spec map: the base coat's finish over the whole sheet, then each
+// visible layer's finish in its outline.
 export function renderSpec(doc) {
   const ctx = specCanvas.getContext('2d');
-  const base = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
-  const baseP = resolveParams(doc.baseMaterial, doc.baseMatParams);
-  ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.fillStyle = `rgb(${baseP.met},${baseP.rough},${baseP.clear})`;
-  ctx.fillRect(0, 0, SIZE, SIZE);
-  if (base.tex) paintSparkle(ctx, base.tex, baseP, 0, 0, SIZE, SIZE);
+  const { tex } = MATERIALS[doc.baseMaterial] || MATERIALS.gloss;
+  const base = resolveParams(doc.baseMaterial, doc.baseMatParams);
+  ctx.fillStyle = `rgb(${base.met},${base.rough},${base.clear})`;
+  ctx.fillRect(0, 0, SIZE, SIZE); // opaque: covers the last map
+  if (tex) paintSparkle(ctx, tex, base, 0, 0, SIZE, SIZE);
 
   // Layers are stamped in runs: neighbours in the stack that carry the very
   // same finish go down as one silhouette, filled once. A livery of many
@@ -1157,42 +1075,39 @@ export function renderSpec(doc) {
   return specCanvas;
 }
 
-// ---------- hit testing ----------
+// ---------- picking ----------
 
+// a sheet point in a picture or text layer's own pixels, from its middle
 export function toLocal(layer, px, py) {
-  const pt = layerMatrix(layer).inverse().transformPoint(new DOMPoint(px, py));
-  return { x: pt.x, y: pt.y };
+  const { x, y } = layerMatrix(layer).inverse().transformPoint(new DOMPoint(px, py));
+  return { x, y };
 }
 
-// corner positions of a layer in doc space (for selection box / handles)
+// a layer's four corners on the sheet, clockwise from its top left (for the
+// selection box and its handles)
 export function layerCorners(layer) {
   if (isRegionLayer(layer)) {
     const { rx = 0, ry = 0, rw = SIZE, rh = SIZE } = layer;
-    return [{ x: rx, y: ry }, { x: rx + rw, y: ry }, { x: rx + rw, y: ry + rh }, { x: rx, y: ry + rh }];
+    return [[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]].map(([x, y]) => ({ x, y }));
   }
-  const hw = layer.img.width / 2;
-  const hh = layer.img.height / 2;
-  const m = layerMatrix(layer);
-  return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => {
-    const pt = m.transformPoint(new DOMPoint(x, y));
-    return { x: pt.x, y: pt.y };
+  const m = layerMatrix(layer), w = layer.img.width / 2, h = layer.img.height / 2;
+  return [[-w, -h], [w, -h], [w, h], [-w, h]].map(([x, y]) => {
+    const q = m.transformPoint(new DOMPoint(x, y));
+    return { x: q.x, y: q.y };
   });
 }
 
-// ---------- (de)serialization ----------
+// ---------- saving and loading ----------
 
+// The livery as plain data, ready for JSON (format overspray/1). Pictures go
+// as their data URLs, the template as its picture only.
 export function serializeDoc(doc) {
   return {
     format: 'overspray/1',
-    name: doc.name,
-    target: doc.target,
-    customNumber: !!doc.customNumber,
-    car: doc.car || null,
-    baseColor: doc.baseColor,
-    baseMaterial: doc.baseMaterial,
-    baseMatParams: doc.baseMatParams || null,
+    name: doc.name, target: doc.target, customNumber: !!doc.customNumber, car: doc.car || null,
+    baseColor: doc.baseColor, baseMaterial: doc.baseMaterial, baseMatParams: doc.baseMatParams || null,
     template: doc.template ? doc.template.src : null,
-    customFonts: (doc.customFonts || []).map(f => ({ name: f.name, data: f.data })),
+    customFonts: (doc.customFonts || []).map(({ name, data }) => ({ name, data })),
     regionMap: doc.regionMap || null,
     palette: cleanPalette(doc.palette),
     baseRef: doc.baseRef || null,
@@ -1200,15 +1115,15 @@ export function serializeDoc(doc) {
     googleFonts: (doc.googleFonts || []).filter(f => typeof f === 'string' && f).slice(0, 60),
     finishRules: cleanFinishRules(doc.finishRules),
     groups: (doc.groups || []).map(g => ({ id: g.id, name: g.name, collapsed: !!g.collapsed, ...(g.turn ? { turn: g.turn } : {}) })),
+    // every field for every kind of layer: what a kind does not use is left
+    // undefined (and so out of the JSON) or saved as its empty default
     layers: doc.layers.map(l => ({
-      id: l.id, type: l.type, name: l.name,
-      groupId: l.groupId || null,
-      visible: l.visible, locked: !!l.locked, opacity: l.opacity, blend: l.blend || null, material: l.material,
-      matParams: l.matParams || null,
-      specOnly: !!l.specOnly,
+      id: l.id, type: l.type, name: l.name, groupId: l.groupId || null,
+      visible: l.visible, locked: !!l.locked, opacity: l.opacity, blend: l.blend || null,
+      material: l.material, matParams: l.matParams || null, specOnly: !!l.specOnly,
       fx: l.fx || null,
-      color: l.color,
-      shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
+      // a shape's fill
+      color: l.color, shape: l.shape, fillType: l.fillType, color2: l.color2, gradAngle: l.gradAngle,
       colorRef: l.colorRef || undefined,
       // painted on its twin panel (or across its centreline) as well; the
       // mirror image is worked out when painting, see mirror.js withMirrors
@@ -1233,14 +1148,14 @@ export function serializeDoc(doc) {
       colorMid: l.colorMid ?? null, midPos: l.midPos ?? 0.5,
       stops: Array.isArray(l.stops) && l.stops.length ? l.stops.map(o => ({ color: o.color, at: o.at })) : undefined,
       car: l.car ? cleanCar(l.car) : undefined, // a car gradient, see carStops
-      src: l.src,
-      text: l.text, font: l.font, fontSize: l.fontSize,
+      src: l.src, // a picture's pixels, or text's as last drawn
+      // text
+      text: l.text, font: l.font, fontSize: l.fontSize, italic: l.italic, letterSpacing: l.letterSpacing,
       textColor: l.textColor, outlineColor: l.outlineColor, outlineWidth: l.outlineWidth,
-      italic: l.italic, letterSpacing: l.letterSpacing,
       fontWeight: l.fontWeight || undefined, lineSpacing: l.lineSpacing || undefined, align: l.align || undefined,
       curve: l.curve || 0,
-      x: l.x, y: l.y, scale: l.scale, scaleY: l.scaleY ?? null, rotation: l.rotation,
-      flipH: l.flipH, flipV: l.flipV,
+      // where it sits: a picture or text's middle, size, turn and flips; a shape's box
+      x: l.x, y: l.y, scale: l.scale, scaleY: l.scaleY ?? null, rotation: l.rotation, flipH: l.flipH, flipV: l.flipV,
       rx: l.rx, ry: l.ry, rw: l.rw, rh: l.rh,
       // trim window (see drawLayer), absolute doc space
       clip: clipPolys(l).length ? clipPolys(l).map(p => p.map(q => ({ x: q.x, y: q.y }))) : null,
@@ -1327,40 +1242,40 @@ export function loadImage(src) {
 function decodeImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    // Remote artwork must be fetched with CORS or the paint canvas becomes
-    // tainted and every export (getImageData/toBlob) throws. Same-origin,
-    // blob: and data: sources are unaffected by the attribute.
-    if (/^https?:/i.test(src) && !src.startsWith(location.origin)) {
-      img.crossOrigin = 'anonymous';
-    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Could not load image'));
+    // a picture from another site must come with CORS, or drawing it taints
+    // the paint canvas and every export fails; this site's own pictures, blob:
+    // and data: URLs need nothing
+    if (/^https?:/i.test(src) && !src.startsWith(location.origin)) img.crossOrigin = 'anonymous';
     img.src = src;
   });
 }
 
-// restore a saved fx block, coercing missing sub-fields to the UI defaults
-function normalizeFx(fx) {
-  if (!fx || typeof fx !== 'object') return null;
-  return { shadow: fx.shadow ?? 0, shadowDX: fx.shadowDX ?? 8, shadowDY: fx.shadowDY ?? 8, shadowColor: fx.shadowColor || '#000000' };
-}
+// a saved shadow, its missing numbers filled in as the panel shows them
+const normalizeFx = (fx) => (fx && typeof fx === 'object'
+  ? { shadow: fx.shadow ?? 0, shadowDX: fx.shadowDX ?? 8, shadowDY: fx.shadowDY ?? 8, shadowColor: fx.shadowColor || '#000000' }
+  : null);
 
+// A saved livery (see serializeDoc) back as a document. Anything broken is
+// left out rather than failing the whole load: a bad region map, a layer that
+// will not load, a group with no layers left in it.
 export async function deserializeDoc(data) {
   const doc = createDoc();
-  doc.name = data.name || doc.name;
-  doc.target = ['car', 'helmet', 'suit'].includes(data.target) ? data.target : 'car';
-  doc.customNumber = !!data.customNumber;
-  doc.car = typeof data.car === 'string' && data.car ? data.car : null;
-  doc.baseColor = data.baseColor || doc.baseColor;
-  doc.baseMaterial = data.baseMaterial || doc.baseMaterial;
-  doc.baseMatParams = data.baseMatParams || null;
+  Object.assign(doc, {
+    name: data.name || doc.name,
+    target: ['car', 'helmet', 'suit'].includes(data.target) ? data.target : 'car',
+    customNumber: !!data.customNumber,
+    car: typeof data.car === 'string' && data.car ? data.car : null,
+    baseColor: data.baseColor || doc.baseColor,
+    baseMaterial: data.baseMaterial || doc.baseMaterial,
+    baseMatParams: data.baseMatParams || null,
+  });
   // decoded only when its lines are drawn, and let go again after (app.js templateLines)
   if (typeof data.template === 'string' && data.template) doc.template = { img: null, src: data.template };
-  if (data.regionMap) {
-    try {
-      doc.regionMap = parseRegionMap(data.regionMap);
-    } catch { /* bad region map — drop it */ }
-  }
+  try {
+    if (data.regionMap) doc.regionMap = parseRegionMap(data.regionMap);
+  } catch { /* a broken map is dropped */ }
   doc.palette = cleanPalette(data.palette);
   doc.finishRules = cleanFinishRules(data.finishRules);
   doc.googleFonts = Array.isArray(data.googleFonts) ? data.googleFonts.filter(f => typeof f === 'string' && f).slice(0, 60) : [];
@@ -1371,90 +1286,61 @@ export async function deserializeDoc(data) {
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
     .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null,
       ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })) } : {}) }));
-  // custom fonts must be live before text layers regenerate below
-  doc.fontWarnings = [];
-  for (const f of (data.customFonts || [])) {
-    if (!f || !f.name || !f.data) continue;
-    doc.customFonts.push({ name: f.name, data: f.data }); // keep the data even if it fails — don't lose it on resave
-    try {
-      await registerCustomFont(f.name, f.data);
-    } catch {
-      doc.fontWarnings.push(f.name); // bad font — its text falls back to a default face
-    }
+  // the livery's own fonts go live first, so its text is drawn in them
+  doc.fontWarnings = []; // fonts that would not load: their text is drawn in a stand-in
+  for (const f of data.customFonts || []) {
+    if (!f?.name || !f.data) continue;
+    doc.customFonts.push({ name: f.name, data: f.data }); // kept even if it fails, so saving again does not lose it
+    await registerCustomFont(f.name, f.data).catch(() => doc.fontWarnings.push(f.name));
   }
-  for (const l of (data.layers || [])) {
+  // what every kind of layer reads the same way, and where a picture or text sits
+  const common = (l, type, name) => ({
+    id: l.id || newId(), type, name: l.name || name,
+    visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1, blend: l.blend === 'multiply' ? 'multiply' : null,
+    material: l.material || 'gloss', matParams: l.matParams || null, specOnly: !!l.specOnly,
+  });
+  const placing = (l) => ({
+    x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
+    scale: l.scale ?? 1, scaleY: Number.isFinite(l.scaleY) ? l.scaleY : null,
+    rotation: l.rotation ?? 0, flipH: !!l.flipH, flipV: !!l.flipV,
+  });
+  for (const l of data.layers || []) {
     try {
       if (l.type === 'fill') {
         doc.layers.push({
           ...createFillLayer(l.color || '#e8e6e1'),
-          id: l.id || newId(), name: l.name || 'fill',
-          visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1, blend: l.blend === 'multiply' ? 'multiply' : null,
-          material: l.material || 'gloss',
-          matParams: l.matParams || null,
-          specOnly: !!l.specOnly,
+          ...common(l, 'fill', 'fill'),
           shape: l.shape || 'rect',
           pts: shapePts(l.pts),
           turn: Number.isFinite(l.turn) ? l.turn : 0,
           colorRef: typeof l.colorRef === 'string' ? l.colorRef : null,
-          fillType: l.fillType || 'solid',
-          color2: l.color2 || '#101114',
-          colorMid: l.colorMid || null,
-          midPos: l.midPos ?? 0.5,
+          fillType: l.fillType || 'solid', color2: l.color2 || '#101114',
+          colorMid: l.colorMid || null, midPos: l.midPos ?? 0.5,
           stops: Array.isArray(l.stops) ? l.stops.filter(o => o && typeof o.color === 'string' && Number.isFinite(o.at)).slice(0, 8).map(o => ({ color: o.color, at: o.at })) : [],
           gradAngle: l.gradAngle ?? 0,
           car: cleanCar(l.car),
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
           flipH: !!l.flipH, flipV: !!l.flipV, // a ready-made shape separated from its mirror is flipped: it stays so
         });
-        continue;
-      }
-      if (l.type === 'text') {
+      } else if (l.type === 'text') {
         const layer = {
-          id: l.id || newId(), type: 'text', name: l.name || 'text',
-          visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1, blend: l.blend === 'multiply' ? 'multiply' : null,
-          material: l.material || 'gloss',
-          matParams: l.matParams || null,
-          specOnly: !!l.specOnly,
+          ...common(l, 'text', 'text'),
           img: null, src: l.src || null,
-          text: l.text ?? 'TEXT', font: l.font || 'Arial Black',
-          fontSize: l.fontSize ?? 160,
-          textColor: l.textColor || '#ffffff',
-          outlineColor: l.outlineColor || '#000000',
-          outlineWidth: l.outlineWidth ?? 0,
+          text: l.text ?? 'TEXT', font: l.font || 'Arial Black', fontSize: l.fontSize ?? 160,
           italic: !!l.italic, letterSpacing: l.letterSpacing ?? 0,
+          textColor: l.textColor || '#ffffff', outlineColor: l.outlineColor || '#000000', outlineWidth: l.outlineWidth ?? 0,
           fontWeight: Number.isFinite(l.fontWeight) ? l.fontWeight : null, lineSpacing: Number.isFinite(l.lineSpacing) ? l.lineSpacing : null,
           align: l.align === 'left' || l.align === 'right' ? l.align : null,
           curve: l.curve ?? 0,
           fx: normalizeFx(l.fx),
-          x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
-          scale: l.scale ?? 1, scaleY: Number.isFinite(l.scaleY) ? l.scaleY : null,
-          rotation: l.rotation ?? 0,
-          flipH: !!l.flipH, flipV: !!l.flipV,
+          ...placing(l),
         };
-        try {
-          regenerateText(layer);
-          doc.layers.push(layer);
-          continue;
-        } catch { /* regeneration failed — fall through to the saved raster */ }
+        regenerateText(layer); // text that cannot be drawn is left out
+        doc.layers.push(layer);
+      } else if (l.type === 'image') { // (any other kind, such as one from the original screen, is left out)
+        doc.layers.push({ ...common(l, 'image', 'image'), fx: normalizeFx(l.fx), img: await loadImage(l.src), src: l.src, ...placing(l) });
       }
-      if (l.type !== 'image') continue; // a kind of layer this app does not make (one from the original screen): left out
-      const img = await loadImage(l.src);
-      doc.layers.push({
-        id: l.id || newId(),
-        type: 'image',
-        name: l.name || 'image',
-        visible: l.visible !== false, locked: !!l.locked, opacity: l.opacity ?? 1, blend: l.blend === 'multiply' ? 'multiply' : null,
-        material: l.material || 'gloss',
-        matParams: l.matParams || null,
-        specOnly: !!l.specOnly,
-        fx: normalizeFx(l.fx),
-        img, src: l.src,
-        x: l.x ?? SIZE / 2, y: l.y ?? SIZE / 2,
-        scale: l.scale ?? 1, scaleY: Number.isFinite(l.scaleY) ? l.scaleY : null,
-        rotation: l.rotation ?? 0,
-        flipH: !!l.flipH, flipV: !!l.flipV,
-      });
-    } catch { /* skip broken layer */ }
+    } catch { /* a layer that will not load is left out */ }
   }
   // trim windows apply to every layer type, so they are restored in one place
   const loaded = new Map(doc.layers.map(l => [l.id, l]));
@@ -1481,26 +1367,21 @@ export async function deserializeDoc(data) {
     loaded.get(l.id).clip = clip;
     loaded.get(l.id).clipAt = [].concat(l.clipAt || []).filter(ok).map(q => ({ x: q.x, y: q.y }));
   }
-  // groups are restored after the layers so broken/skipped layers can't leave
-  // a group pointing at nothing: re-attach by id, then keep only groups that
-  // still have members
-  const savedGroupOf = new Map();
-  for (const l of (data.layers || [])) {
-    if (l && l.id && typeof l.groupId === 'string' && l.groupId) savedGroupOf.set(l.id, l.groupId);
-  }
-  const declared = new Set();
-  const groups = [];
-  for (const g of (Array.isArray(data.groups) ? data.groups : [])) {
-    if (!g || typeof g.id !== 'string' || !g.id || declared.has(g.id)) continue;
-    declared.add(g.id);
-    groups.push({ id: g.id, name: typeof g.name === 'string' && g.name ? g.name : 'Group', collapsed: !!g.collapsed, ...(Number.isFinite(g.turn) && g.turn ? { turn: g.turn } : {}) });
+  // Groups come back after the layers, so none is left pointing at a layer
+  // that did not load: each layer rejoins the group saved with it, by id,
+  // and only groups with a layer in them are kept.
+  const savedGroup = new Map((data.layers || []).filter(l => l && l.id && typeof l.groupId === 'string' && l.groupId).map(l => [l.id, l.groupId]));
+  const groups = new Map();
+  for (const g of Array.isArray(data.groups) ? data.groups : []) {
+    if (!g || typeof g.id !== 'string' || !g.id || groups.has(g.id)) continue;
+    groups.set(g.id, { id: g.id, name: typeof g.name === 'string' && g.name ? g.name : 'Group', collapsed: !!g.collapsed, ...(Number.isFinite(g.turn) && g.turn ? { turn: g.turn } : {}) });
   }
   const used = new Set();
   for (const l of doc.layers) {
-    const gid = savedGroupOf.get(l.id);
-    if (gid && declared.has(gid)) { l.groupId = gid; used.add(gid); }
-    else l.groupId = null;
+    const gid = savedGroup.get(l.id);
+    l.groupId = groups.has(gid) ? gid : null;
+    if (l.groupId) used.add(gid);
   }
-  doc.groups = groups.filter(g => used.has(g.id));
+  doc.groups = [...groups.values()].filter(g => used.has(g.id));
   return doc;
 }
