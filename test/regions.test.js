@@ -58,15 +58,15 @@ test('broken maps are refused with a message saying what is wrong', () => {
 
 test('each box number must be a real number', () => {
   for (const k of ['x', 'y', 'w', 'h']) {
-    for (const bad of [NaN, Infinity, '5', undefined]) {
+    for (const bad of [undefined, '12', -Infinity, NaN]) {
       assert.throws(() => withRegions(box('r', 0, 0, 1, 1, { [k]: bad })), new RegExp(`region "r" has a bad "${k}"`));
     }
   }
 });
 
 test('a new map is empty and names its car', () => {
-  assert.deepEqual(createRegionMap(), { format: REGIONS_FORMAT, car: 'unknown car', regions: [] });
-  assert.equal(createRegionMap('gt3').car, 'gt3');
+  assert.deepEqual(createRegionMap('mx5'), { format: REGIONS_FORMAT, car: 'mx5', regions: [] });
+  assert.equal(createRegionMap().car, 'unknown car');
 });
 
 // ---------------------------------------------------------------- finding regions
@@ -86,11 +86,11 @@ test('regionAt: where boxes overlap, the later one is on top', () => {
 });
 
 test('regionAt counts a box edge as inside', () => {
-  const map = withRegions(box('r', 10, 20, 30, 40));
-  assert.equal(regionAt(map, 10, 20)?.id, 'r');
-  assert.equal(regionAt(map, 40, 60)?.id, 'r');
-  assert.equal(regionAt(map, 9.999, 20), null);
-  assert.equal(regionAt(map, 40.001, 60), null);
+  const map = withRegions(box('r', 5, 15, 20, 10));
+  assert.equal(regionAt(map, 5, 15)?.id, 'r');
+  assert.equal(regionAt(map, 25, 25)?.id, 'r');
+  assert.equal(regionAt(map, 4.99, 15), null);
+  assert.equal(regionAt(map, 25, 25.01), null);
 });
 
 test('regionById finds a region by id, null for an id not there', () => {
@@ -102,10 +102,10 @@ test('regionById finds a region by id, null for an id not there', () => {
 // ---------------------------------------------------------------- ids
 
 test('uniqueRegionId turns a name into lowercase words joined by _', () => {
-  const map = createRegionMap('c');
-  assert.equal(uniqueRegionId('Left Door', map), 'left_door');
-  assert.equal(uniqueRegionId('  Rear--Wing!! ', map), 'rear_wing');
-  assert.equal(uniqueRegionId('A/B #3', map), 'a_b_3');
+  const id = (name) => uniqueRegionId(name, createRegionMap('c'));
+  assert.equal(id('Front Bumper'), 'front_bumper');
+  assert.equal(id(' --Side Pod (L)!'), 'side_pod_l');
+  assert.equal(id('Wing #2/top'), 'wing_2_top');
 });
 
 test('uniqueRegionId adds the next free number when the id is taken', () => {
