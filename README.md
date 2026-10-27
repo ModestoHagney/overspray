@@ -41,8 +41,17 @@ and Live need Chrome or Edge; everything else works in other browsers.
 
 ## Credits
 
-Built on Clearcoat by OblivionsPeak. The name is set in Rubik Spray Paint
+Started as a fork of Clearcoat by OblivionsPeak; its code has since been
+rewritten. The name is set in Rubik Spray Paint
 (SIL Open Font License), from Google Fonts. Icons found through the search come
 from Game Icons (CC BY 3.0), Material Symbols and Material Design Icons
 (Apache 2.0) and Bootstrap Icons (MIT), by way of Iconify; each one's credit
 is kept with the livery and listed under Help › About.
+
+## Licence
+
+Overspray is under the GNU Affero General Public License v3.0 only (see
+`LICENSE`). If you run a changed copy for other people, online included, you
+must share your changed source under the same licence. The bundled ag-psd
+(`js/vendor/`) keeps its own MIT licence. Car maps in overspray-maps are
+CC BY-SA 4.0.
