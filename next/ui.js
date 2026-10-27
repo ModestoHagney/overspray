@@ -98,7 +98,7 @@ const TOOLS = [
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
   ['cargrad', 'New car gradient'],
-  ['extras', 'Car extras: pit box, cockpit and pitboard'],
+  ['extras', 'Car extras: pit box, colour squares, pitboard'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
 const FINISH_TOOLS = [
@@ -417,11 +417,12 @@ export function initUI(app, actions, version) {
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
-    if (actions.swatchAt(app.sel)) { // Car extras: the pit box, cockpit and pitboard colours, one at a time
+    if (actions.swatchAt(app.sel)) { // Car extras: the pit box, colour squares, pitboard and name plate, one at a time
       const all = app.doc.swatches, board = !!actions.swatchAt(app.sel).points;
       return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
-        (all.length < 2 ? '' : `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`) +
-        (board ? '<div class="note">The board\'s background. Anything you add now (a logo, text, a shape) stays inside the board.</div>'
+        (all.length < 2 ? '' : all.length <= 4 ? `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`
+          : `<div class="chips">${all.map((p, i) => `<button class="chip${app.sel === 'sw' + i ? ' on' : ''}" data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}"><i style="background:${esc(p.color)}"></i><span>${esc(p.name)}</span></button>`).join('')}</div>`) +
+        (board ? '<div class="note">Its background. Anything you add now (a logo, text, a shape) stays inside it.</div>'
           : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there just blends or makes patterns.</div>');
     }
     const many = actions.selectedLayers();

@@ -159,7 +159,7 @@ export function createDoc() {
     regionMap: null,            // parsed overspray-regions/1 map (see regions.js)
     palette: [],                // the livery's saved colours { id, name, color }; a layer's colorRef (or baseRef) points at one
     baseRef: null,              // palette id the base coat follows, if any
-    swatches: [],               // the car's extra colours (pit box, cockpit) as squares from the template: { name, x, y, w, h, color, ref } (ref: palette id it follows)
+    swatches: [],               // the car's extra colours (pit box, cockpit, roll bar…) as squares from the template, and areas (pitboard, name plate) with points: { name, x, y, w, h, color, ref } (ref: palette id it follows)
   };
 }
 
@@ -1282,7 +1282,7 @@ export async function deserializeDoc(data) {
   doc.baseRef = doc.palette.some(c => c.id === data.baseRef) ? data.baseRef : null;
   const n = (v) => Math.max(0, Math.min(SIZE, Math.round(+v) || 0));
   const sw = data.swatches || data.pitbox; // (saved as pitbox before the cockpit colour came)
-  doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 8)
+  doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 24)
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
     .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null,
       ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })) } : {}) }));

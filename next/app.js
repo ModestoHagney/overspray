@@ -1352,10 +1352,10 @@ const actions = {
     actions.mapChanged(`Centreline removed from ${r.name}`);
   },
   // One fade over the whole car, painted on each panel by its car line (see cargrad.js)
-  // the left strip's Car extras: the pit box, cockpit and pitboard, in Properties
+  // the left strip's Car extras: the pit box, colour squares, pitboard and name plate, in Properties
   openExtras() {
     if (needTemplate()) return;
-    if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, cockpit or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
+    if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, colour squares or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
     actions.select(swatchAt(app.sel) ? app.sel : 'sw0');
   },
   addCarGradient() {
