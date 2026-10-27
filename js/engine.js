@@ -24,10 +24,10 @@ const SPARKLE_KNOBS = ['density', 'scale', 'contrast'];
 
 // a finish's numbers, as a new object a layer can change
 export function defaultParams(key) {
-  const m = MATERIALS[key] || MATERIALS.gloss;
-  const p = { met: m.met, rough: m.rough, clear: m.clear };
-  for (const k of SPARKLE_KNOBS) if (m[k] !== undefined) p[k] = m[k];
-  return p;
+  const finish = MATERIALS[key] ?? MATERIALS.gloss;
+  const own = { met: finish.met, rough: finish.rough, clear: finish.clear };
+  SPARKLE_KNOBS.filter(k => k in finish).forEach(k => { own[k] = finish[k]; });
+  return own;
 }
 
 // a finish's numbers with a layer's own changes over them
@@ -1058,8 +1058,8 @@ export function renderSpec(doc) {
     for (const l of run) { const bx = paintBox(l); x0 = Math.min(x0, bx.x); y0 = Math.min(y0, bx.y); x1 = Math.max(x1, bx.x + bx.w); y1 = Math.max(y1, bx.y + bx.h); }
     const w = x1 - x0, h = y1 - y0;
     if (w <= 0 || h <= 0) continue;
-    // paint the silhouettes, then fill them with the material —
-    // flat channel values, or a procedural micro-texture for tex materials
+    // the run's shapes in any colour, then their insides set to the finish's
+    // three numbers, with sparkle laid on top for flake and glitter
     for (const l of run) drawLayer(sctx, l, true); // silhouette pass: no shadow
     sctx.save();
     sctx.globalCompositeOperation = 'source-in';
