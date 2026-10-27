@@ -44,7 +44,7 @@ input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); o
 .brand, .brandname { font-family: "Rubik Spray Paint", var(--ui); font-weight: 400; letter-spacing: .01em; }
 .brand { display: inline-flex; align-items: center; gap: 6px; font-size: 18px; line-height: 1; }
 .brand .mark { width: 20px; height: 20px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-.brand .beta { margin-left: 2px; padding: 1px 5px; font: 500 10px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
+.brand .beta { margin-left: 2px; padding: 1px 5px; font: 500 10px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--bad); border: 1px solid var(--bad); border-radius: 4px; }
 .brandname { font-size: 34px; line-height: 1.1; }
 .menus { display: flex; gap: 2px; }
 .menu { position: relative; }
