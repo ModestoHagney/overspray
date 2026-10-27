@@ -1219,7 +1219,7 @@ export function initUI(app, actions, version) {
     return !list.length ? '' : '<div class="sub">Icons in this livery</div>' + list.map((c) =>
       `<div class="note">${esc(c.name)}: ${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.set)}</a>` : esc(c.set)}${c.author ? ' by ' + esc(c.author) : ''}${c.licence ? ', ' + esc(c.licence) : ''}</div>`).join('');
   };
-  const about = () => ask({ title: 'About', ok: 'Close', cancel: null, body: `<div class="brandname">Overspray</div><div class="note">${esc(version)}</div><div class="note">Built on <a href="https://github.com/OblivionsPeak/clearcoat" target="_blank" rel="noopener">Clearcoat by OblivionsPeak</a></div>` + credits() });
+  const about = () => ask({ title: 'About', ok: 'Close', cancel: null, body: `<div class="brandname">Overspray</div><div class="note">${esc(version)}</div><div class="note">Originally based on <a href="https://github.com/OblivionsPeak/clearcoat" target="_blank" rel="noopener">Clearcoat by OblivionsPeak</a></div><div class="note">Licence: <a href="https://github.com/ModestoHagney/overspray/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a></div>` + credits() });
 
   // ---------- clicks ----------
   const run = (act) => {
