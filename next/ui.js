@@ -422,7 +422,8 @@ export function initUI(app, actions, version) {
       return colourHead(`<span class="pname">${esc(actions.swatchAt(app.sel).name)}</span>`) +
         (all.length < 2 ? '' : all.length <= 4 ? `<div class="seg">${all.map((p, i) => `<button data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}">${esc(p.name)}</button>`).join('')}</div>`
           : `<div class="chips">${all.map((p, i) => `<button class="chip${app.sel === 'sw' + i ? ' on' : ''}" data-swpick="sw${i}" aria-pressed="${app.sel === 'sw' + i}"><i style="background:${esc(p.color)}"></i><span>${esc(p.name)}</span></button>`).join('')}</div>`) +
-        (board ? '<div class="note">Its background. Anything you add now (a logo, text, a shape) stays inside it.</div>'
+        (board ? `<label class="switch" title="Paint no colour here, so what is under it shows (the pitboard under a name plate, or the livery). Text added here still shows">Transparent background<input id="f-swclear" type="checkbox"${actions.swatchAt(app.sel).clear ? ' checked' : ''}></label>` +
+          '<div class="note">Its background. Anything you add now (a logo, text, a shape) stays inside it.</div>'
           : '<div class="note">iRacing colours these parts from small squares on the sheet. Flat colours only: a fade there just blends or makes patterns.</div>');
     }
     const many = actions.selectedLayers();
@@ -910,6 +911,7 @@ export function initUI(app, actions, version) {
     if (/^fn-/.test(id)) return refresh(); // a slider let go: Reset comes or goes, the list's name updates
     if (id === 'f-mirrored') return actions.mirror();
     if (id === 'f-continues') return actions.continues();
+    if (id === 'f-swclear') return actions.clearBackground(e.target.checked);
     if (id === 'f-font') return actions.setFont(e.target.value);
     if (id === 'f-fontWeight') { actions.setProp('fontWeight', +e.target.value === 400 ? null : +e.target.value); return; }
     if (id === 'f-align') { actions.setProp('align', e.target.value === 'center' ? null : e.target.value); return; }

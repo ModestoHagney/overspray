@@ -52,6 +52,9 @@ test('extra colour squares keep their name, place and colour through save and lo
   assert.deepEqual(back.swatches, [{ name: 'Cockpit', x: 1986, y: 2021, w: 27, h: 24, color: '#ff0000', ref: null }, { name: 'Pit box', x: 2048, y: 0, w: 27, h: 24, color: '#03ff32', ref: null }]);
   const board = await deserializeDoc({ swatches: [{ name: 'Pitboard', x: 0, y: 0, w: 10, h: 10, color: '#ffffff', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 99999, y: 10 }] }] });
   assert.deepEqual(board.swatches[0].points, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 2048, y: 10 }]);
+  // "Transparent background" stays on through a load, on an area only
+  const clear = await deserializeDoc({ swatches: [{ name: 'Name plate', x: 0, y: 0, w: 10, h: 10, color: '#000000', clear: true, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }, { name: 'Rollbar', x: 0, y: 0, w: 9, h: 9, color: '#000000', clear: true }] });
+  assert.deepEqual(clear.swatches.map(p => !!p.clear), [true, false]);
   const old = await deserializeDoc({ pitbox: [{ x: 1, y: 2, w: 3, h: 4, color: '#ff0000' }, { x: 5, y: 2, w: 3, h: 4, color: '#00ff00' }] });
   assert.deepEqual(old.swatches.map(p => p.name), ['Pit box 1', 'Pit box 2']);
 });

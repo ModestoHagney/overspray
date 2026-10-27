@@ -977,7 +977,7 @@ const actions = {
       d.regionMap = t.regionMap;
       // the template's extra colours; ones already set keep their colours
       app.board = null;
-      d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref } : { ...p, ref: null }; });
+      d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref, ...(had.clear && p.points ? { clear: true } : {}) } : { ...p, ref: null }; });
       if (!fixedSel() && !d.layers.some(l => l.id === app.sel)) app.sel = 'base';
       if (!d.name || d.name === 'untitled livery') d.name = t.carName;
       fit();
@@ -1551,6 +1551,13 @@ const actions = {
   },
   // Continues: what hangs over a linked edge of the layer's panel is painted
   // on the panel that edge meets, and follows every edit
+  // Car extras: the picked pitboard or name plate paints nothing, so what is under it shows
+  clearBackground(on) {
+    const p = swatchAt(app.sel);
+    if (!p || !p.points) return;
+    if (on) p.clear = true; else delete p.clear;
+    change({ now: true });
+  },
   continues() {
     const l = actions.selected(), ls = selectedLayers();
     if (!l || !canChange() || needTemplate()) return;
@@ -2409,7 +2416,7 @@ const actions = {
     if (!swatchAt(app.sel)) app.colour = hex; // an extra's colour is not the next shape's: a logo on the pitboard would vanish into it
     let painted = 0;
     if (app.sel === 'base') { app.doc.baseColor = hex; app.doc.baseRef = ref; painted = 1; }
-    else if (swatchAt(app.sel)) { Object.assign(swatchAt(app.sel), { color: hex, ref }); painted = 1; }
+    else if (swatchAt(app.sel)) { Object.assign(swatchAt(app.sel), { color: hex, ref }); delete swatchAt(app.sel).clear; painted = 1; } // a colour picked: the background is back
     else for (const l of selectedLayers()) { // every selected shape and text takes it
       if (l.type === 'fill') { l.color = hex; l.colorRef = ref; keepFadeOut(l); painted++; }
       else if (l.type === 'text') { l.textColor = hex; l.colorRef = ref; regenerateText(l); painted++; }

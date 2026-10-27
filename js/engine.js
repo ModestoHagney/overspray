@@ -791,7 +791,7 @@ const inPaintMap = (layer) => layer.visible && !layer.specOnly;
 // set for them; the pitboard's colour goes under the layers, as its background
 function paintSwatches(ctx, doc, boards = false) {
   for (const p of doc.swatches || []) {
-    if (!!p.points !== boards) continue;
+    if (!!p.points !== boards || p.clear) continue; // clear: "Transparent background", what is under it shows
     ctx.fillStyle = p.color;
     if (!boards) { ctx.fillRect(p.x, p.y, p.w, p.h); continue; }
     ctx.beginPath();
@@ -1285,7 +1285,7 @@ export async function deserializeDoc(data) {
   doc.swatches = (Array.isArray(sw) ? sw : []).slice(0, 24)
     .filter(p => p && /^#[0-9a-f]{6}$/i.test(p.color))
     .map((p, i, all) => ({ name: typeof p.name === 'string' && p.name ? p.name.slice(0, 40) : all.length > 1 ? `Pit box ${i + 1}` : 'Pit box', x: n(p.x), y: n(p.y), w: n(p.w), h: n(p.h), color: p.color, ref: doc.palette.some(c => c.id === p.ref) ? p.ref : null,
-      ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })) } : {}) }));
+      ...(Array.isArray(p.points) && p.points.length >= 3 ? { points: p.points.slice(0, 2000).map(q => ({ x: n(q && q.x), y: n(q && q.y) })), ...(p.clear ? { clear: true } : {}) } : {}) }));
   // the livery's own fonts go live first, so its text is drawn in them
   doc.fontWarnings = []; // fonts that would not load: their text is drawn in a stand-in
   for (const f of data.customFonts || []) {
