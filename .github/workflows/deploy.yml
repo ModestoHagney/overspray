@@ -1,0 +1,24 @@
+# Deploy on simpson, through the self-hosted runner there.
+# Every push to main updates the test copy, tools.niftyfi.sh/_lab/overspray.
+# The live site only updates when Zac presses Run workflow (Actions > Deploy).
+# No pull_request trigger on purpose: PRs never run on the server.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, simpson]
+    steps:
+      - name: Pull main
+        env:
+          DIR: ${{ github.event_name == 'workflow_dispatch' && '/sites/overspray' || '/sites/_lab/overspray' }}
+        run: |
+          git -c safe.directory="$DIR" -C "$DIR" pull --ff-only
+          # the runner is root in its container; give the files back to the folder's owner
+          chown -R --reference="$DIR" "$DIR"
