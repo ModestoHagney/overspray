@@ -1,7 +1,9 @@
-// Overspray service worker: versioned cache, so the app opens offline.
+// Overspray's offline worker. It keeps a copy of every file the app loads, so
+// the app still opens without a network.
 //
-// On every deploy the version in version.js is bumped. It names a new cache
-// here; the app sees the new worker, saves, and reloads itself once to take it.
+// Each deploy bumps the version in version.js, which names a new cache below.
+// The browser sees the worker has changed; the app saves, tells it to take
+// over, and reloads once.
 
 importScripts('./version.js');
 // The scope is in the name: the live site and the test copy (/_lab/overspray)
@@ -9,72 +11,51 @@ importScripts('./version.js');
 const SCOPE = self.registration.scope;
 const CACHE = 'overspray-' + self.VERSION + ' ' + SCOPE;
 
-// The app's page and the icons. Every path here must exist in the repo, or
-// the worker fails to install. The rest of the app is not listed: it is
-// fetched fresh and kept as it goes, see below.
-const PRECACHE = [
-  './',
-  './index.html',
-  './version.js',
-  './manifest.webmanifest',
-  './icon.svg',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-192-maskable.png',
-  './icons/icon-512-maskable.png',
+// Kept at install: the page, the version and the icons, so the app can start
+// offline straight away. Every path here must exist in the repo, or the
+// install fails. Everything else is kept the first time it is fetched.
+const START_FILES = [
+  './', './index.html', './version.js', './manifest.webmanifest', './icon.svg',
+  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
 ];
 
-self.addEventListener('install', (event) => {
-  // no skipWaiting here: the page asks for it (the SKIP_WAITING message
-  // below) once it has saved
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)));
+// no skipWaiting here: the page sends SKIP_WAITING once it has saved
+self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(START_FILES))));
+
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(
-      names
-        .filter((n) => n !== CACHE && (n.startsWith('clearcoat-') // what the app was called before
-          || (n.startsWith('overspray-') && (!n.includes(' ') || n.endsWith(' ' + SCOPE))))) // no space: from before the scope was in the name
-        .map((n) => caches.delete(n))
-    );
-    await self.clients.claim();
-  })());
-});
+// A cache this worker should remove: an older version of this copy of the app,
+// or one from before the scope was in the name (no space), or from when the app
+// was called Clearcoat.
+const stale = (name) => name !== CACHE && (name.startsWith('clearcoat-')
+  || (name.startsWith('overspray-') && (!name.includes(' ') || name.endsWith(' ' + SCOPE))));
 
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
-});
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  for (const name of await caches.keys()) if (stale(name)) await caches.delete(name);
+  await self.clients.claim();
+})()));
 
-// from the network, kept as it is fetched; the kept copy when there is no network
+// From the network, keeping a copy; the kept copy when there is no network.
 async function fresh(req, opts) {
   try {
     const res = await fetch(req, opts);
-    if (res && res.ok) (await caches.open(CACHE)).put(req, res.clone());
+    if (res?.ok) (await caches.open(CACHE)).put(req, res.clone());
     return res;
   } catch (err) {
-    const cached = await caches.match(req);
-    if (cached) return cached;
-    throw err;
+    const kept = await caches.match(req);
+    if (!kept) throw err;
+    return kept;
   }
 }
 
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return; // never intercept non-GET
-
-  const url = new URL(req.url);
-
-  if (url.origin === self.location.origin) {
-    // Everything the app loads comes fresh from the network, so a deploy
-    // shows up on the next reload; each file is kept as it is fetched, and
-    // the kept copy is used when there is no network.
-    // ponytail: network first costs a round trip per file on every load;
-    // precache the app and serve it cache-first if load time ever matters.
-    event.respondWith(fresh(req, { cache: 'no-cache' }));
-  } else {
-    // cross-origin (Google Fonts, the icon search): the same, never precached
-    event.respondWith(fresh(req));
-  }
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return; // anything else goes straight to the network
+  // The app's own files skip the browser's HTTP cache, so a deploy shows on the
+  // next reload. Other sites (Google Fonts, the icon search) use it as usual.
+  // ponytail: network first costs a round trip per file on every load;
+  // precache the app and serve it cache-first if load time ever matters.
+  const own = new URL(e.request.url).origin === self.location.origin;
+  e.respondWith(fresh(e.request, own ? { cache: 'no-cache' } : undefined));
 });

@@ -4,28 +4,25 @@
 // h); one may also carry "points", an outline of its real shape, in which case
 // the rectangle is that outline's bounding box. A map may also carry "links":
 // pairs of edge stretches that meet on the car (see the seam links section).
-
 export const REGIONS_FORMAT = 'overspray-regions/1';
 
-// how a mirror partner relates to its source panel:
-//   flip   — left/right reflection (hand-made maps; the default)
-//   flipV  — top/bottom reflection (template twins folded about the sheet axis)
-//   rot180 — the same panel turned 180° (no reflection at all)
-//   same   — a plain copy, same orientation
+// The ways a twin can sit relative to its panel. 'flip' mirrors left to right
+// and is what a hand-made pair gets; 'flipV' mirrors top to bottom (twins
+// above and below each other on the sheet); 'rot180' is the panel turned half
+// way round, no mirroring; 'same' is an unturned copy.
 export const MIRROR_KINDS = ['flip', 'flipV', 'rot180', 'same'];
 
 // caps on what a map file may hold, so a shared map that is broken or hostile
 // cannot freeze the page; real cars use a small part of each
 export const MAP_LIMITS = { regions: 1000, points: 200000, links: 5000, name: 80 };
 
-export function createRegionMap(car) {
-  return { format: REGIONS_FORMAT, car: car || 'unknown car', regions: [] };
-}
+// an empty map for a car
+export const createRegionMap = (car) => ({ format: REGIONS_FORMAT, car: car || 'unknown car', regions: [] });
 
-// validate + normalize a parsed JSON value into a region map; throws with a
-// readable message on anything malformed
+// Check a map read from JSON and return a clean copy holding only the fields
+// known here. Anything wrong throws, with a message fit to show the user.
 export function parseRegionMap(data) {
-  if (!data || typeof data !== 'object') throw new Error('not a region map object');
+  if (typeof data !== 'object' || data === null) throw new Error('not a region map object');
   if (data.format !== REGIONS_FORMAT) throw new Error(`unknown format "${data.format}" (expected ${REGIONS_FORMAT})`);
   if (!Array.isArray(data.regions)) throw new Error('missing "regions" array');
   if (data.regions.length > MAP_LIMITS.regions) throw new Error(`too many regions (over ${MAP_LIMITS.regions})`);
@@ -34,23 +31,21 @@ export function parseRegionMap(data) {
   for (const k of ['links', 'places', 'carLines']) {
     if (Array.isArray(data[k]) && data[k].length > MAP_LIMITS.links) throw new Error(`too many ${k} (over ${MAP_LIMITS.links})`);
   }
-  const seen = new Set();
-  const regions = data.regions.map((r, i) => {
-    if (!r || typeof r !== 'object') throw new Error(`region ${i} is not an object`);
-    if (typeof r.id !== 'string' || !r.id) throw new Error(`region ${i} has no id`);
-    if (seen.has(r.id)) throw new Error(`duplicate region id "${r.id}"`);
-    seen.add(r.id);
-    for (const k of ['x', 'y', 'w', 'h']) {
-      if (!Number.isFinite(r[k])) throw new Error(`region "${r.id}" has a bad "${k}"`);
-    }
-    if (r.w <= 0 || r.h <= 0) throw new Error(`region "${r.id}" has a non-positive size`);
-    const out = {
-      id: r.id,
-      name: (typeof r.name === 'string' && r.name ? r.name : r.id).slice(0, MAP_LIMITS.name),
-      x: r.x, y: r.y, w: r.w, h: r.h,
-    };
-    if (!r.kind) out.name = cleanName(out.name) || cleanName(r.id) || 'panel'; // panel names follow the rule, whoever wrote the file
-    if (typeof r.mirror === 'string' && r.mirror) out.mirror = r.mirror;
+  const seen = new Set(); // ids so far, then every id once the regions are read
+  const regions = [];
+  data.regions.forEach((r, i) => {
+    if (typeof r !== 'object' || r === null) throw new Error(`region ${i} is not an object`);
+    const { id } = r;
+    if (!id || typeof id !== 'string') throw new Error(`region ${i} has no id`);
+    if (seen.has(id)) throw new Error(`duplicate region id "${id}"`);
+    seen.add(id);
+    const bad = ['x', 'y', 'w', 'h'].find(k => !Number.isFinite(r[k]));
+    if (bad) throw new Error(`region "${id}" has a bad "${bad}"`);
+    if (!(r.w > 0 && r.h > 0)) throw new Error(`region "${id}" has a non-positive size`);
+    const named = typeof r.name === 'string' && r.name ? r.name : id;
+    const out = { id, name: named.slice(0, MAP_LIMITS.name), x: r.x, y: r.y, w: r.w, h: r.h };
+    if (!r.kind) out.name = cleanName(out.name) || cleanName(id) || 'panel'; // panel names follow the rule, whoever wrote the file
+    if (r.mirror && typeof r.mirror === 'string') out.mirror = r.mirror;
     if (r.center !== undefined) {
       const { a, b } = r.center || {};
       const ok = (q) => q && Number.isFinite(q.x) && Number.isFinite(q.y);
@@ -64,22 +59,18 @@ export function parseRegionMap(data) {
       }
       out.points = r.points.map(q => ({ x: q.x, y: q.y }));
     }
-    // template-derived zones: what the rectangle is, how artwork reads in it,
-    // and how its twin relates (see zones.js)
-    if (r.kind === 'sponsor' || r.kind === 'number') out.kind = r.kind;
-    if ([90, 180, 270].includes(r.rot)) out.rot = r.rot;
-    if (MIRROR_KINDS.includes(r.mirrorKind) && out.mirror) out.mirrorKind = r.mirrorKind;
+    // zones read from a template (zones.js): sponsor or number box, which way
+    // up artwork goes in it, and how its twin is turned
+    if (['sponsor', 'number'].includes(r.kind)) out.kind = r.kind;
+    if (r.rot === 90 || r.rot === 180 || r.rot === 270) out.rot = r.rot;
+    if (out.mirror && MIRROR_KINDS.includes(r.mirrorKind)) out.mirrorKind = r.mirrorKind;
     if (r.noPair === true && !out.mirror) out.noPair = true; // checked: it has no twin (see suggestPairs)
-    return out;
+    regions.push(out);
   });
-  for (const r of regions) {
-    if (r.mirror && !seen.has(r.mirror)) throw new Error(`region "${r.id}" mirrors unknown id "${r.mirror}"`);
-  }
-  const map = {
-    format: REGIONS_FORMAT,
-    car: typeof data.car === 'string' && data.car ? data.car.slice(0, MAP_LIMITS.name) : 'unknown car',
-    regions,
-  };
+  const orphan = regions.find(r => r.mirror && !seen.has(r.mirror));
+  if (orphan) throw new Error(`region "${orphan.id}" mirrors unknown id "${orphan.mirror}"`);
+  const car = typeof data.car === 'string' && data.car ? data.car.slice(0, MAP_LIMITS.name) : 'unknown car';
+  const map = { format: REGIONS_FORMAT, car, regions };
   if (data.links !== undefined) {
     if (!Array.isArray(data.links)) throw new Error('"links" is not an array');
     const pt = (q) => q && Number.isFinite(q.x) && Number.isFinite(q.y);
@@ -124,7 +115,6 @@ export function parseRegionMap(data) {
   }
   return map;
 }
-
 // How well two maps' traced panels line up, 0..1: the share of outlined
 // panels (sponsor/number zones aside) that have a panel of the same box in the
 // other map, taken the worse way round. Maps traced from the same template
@@ -139,9 +129,7 @@ export function mapFit(a, b, tol = 4) {
   return Math.min(share(A, B), share(B, A));
 }
 
-export function regionById(map, id) {
-  return map.regions.find(r => r.id === id) || null;
-}
+export const regionById = (map, id) => map.regions.find(r => r.id === id) ?? null;
 
 // even-odd test: is (x, y) inside the closed outline?
 export function pointInPolygon(pts, x, y) {
@@ -153,23 +141,11 @@ export function pointInPolygon(pts, x, y) {
   return inside;
 }
 
-// topmost-last: later entries win where regions overlap
+// The region under (x, y). Where regions overlap, the one listed last is on top.
 export function regionAt(map, x, y) {
-  const rs = map.regions;
-  for (let i = rs.length - 1; i >= 0; i--) {
-    const r = rs[i];
-    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
-        && (!r.points || pointInPolygon(r.points, x, y))) return r;
-  }
-  return null;
-}
-
-// map a point through a mirror pair by relative position:
-// (u, v) within src → (1 - u, v) within dst
-export function mirrorPoint(src, dst, x, y) {
-  const u = src.w ? (x - src.x) / src.w : 0;
-  const v = src.h ? (y - src.y) / src.h : 0;
-  return { x: dst.x + (1 - u) * dst.w, y: dst.y + v * dst.h };
+  const hit = (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
+    && (!r.points || pointInPolygon(r.points, x, y));
+  return map.regions.findLast(hit) ?? null;
 }
 
 // Which relation (see MIRROR_KINDS) lays src's outline most closely over
@@ -198,6 +174,7 @@ export function guessMirrorKind(src, dst, kinds = MIRROR_KINDS) {
   }
   return best;
 }
+
 // how far src and dst land from each other's outlines under a kind, both ways round
 function mirrorMiss(src, dst, kind) {
   const miss = (from, to, kind) => {
@@ -214,14 +191,13 @@ function mirrorMiss(src, dst, kind) {
   };
   return miss(src, dst, kind) + miss(dst, src, kind);
 }
-
-// mirrorPoint generalized over the pair's relation
+// Where (x, y) in src lands in its twin dst: the same spot as a share of each
+// box, turned or mirrored as the kind says.
 export function mirrorPointKind(src, dst, x, y, kind) {
-  const u = src.w ? (x - src.x) / src.w : 0;
-  const v = src.h ? (y - src.y) / src.h : 0;
-  const fu = kind === 'flip' || kind === 'rot180' ? 1 - u : u;
-  const fv = kind === 'flipV' || kind === 'rot180' ? 1 - v : v;
-  return { x: dst.x + fu * dst.w, y: dst.y + fv * dst.h };
+  let u = src.w ? (x - src.x) / src.w : 0, v = src.h ? (y - src.y) / src.h : 0;
+  if (kind === 'flip' || kind === 'rot180') u = 1 - u;
+  if (kind === 'flipV' || kind === 'rot180') v = 1 - v;
+  return { x: dst.x + u * dst.w, y: dst.y + v * dst.h };
 }
 
 // ---------- centerline ----------
@@ -312,15 +288,16 @@ export function trimShape(r, x, y, bleed = 3) {
   return growOutline(pts, bleed).map(q => ({ x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 }));
 }
 
-// slug a display name into an id that doesn't collide with the map's regions
 // Panel names are lowercase letters, digits and _ only (left_door, rear_wing_2):
 // a space or anything else becomes _. The id is made the same way.
 export const cleanName = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
+// An id made from a name, with _2, _3... added when the map already has it.
 export function uniqueRegionId(name, map) {
   const base = cleanName(name) || 'region';
-  let id = base, n = 2;
-  while (map.regions.some(r => r.id === id)) id = base + '_' + (n++);
+  const taken = new Set(map.regions.map(r => r.id));
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}_${n}`;
   return id;
 }
 
