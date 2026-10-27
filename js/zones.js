@@ -1,249 +1,226 @@
-// Overspray template intelligence — pure helpers that turn the hidden
-// "Sponsor" / "Numbers" / "Mask" / decal layers of an official iRacing
-// template PSD into usable facts: sponsor + number zones (rectangles),
-// which zones are twins of each other, how a twin reads (mirrored or turned
-// 180°), where paint is allowed, and how much of a layer bleeds off-paint.
+// Facts read from a kit's helper layers (see psd.js): the sponsor and number
+// boxes, which boxes are twins, and which way up artwork reads in each, going
+// by the stock decals.
 //
-// Everything here works on ImageData-like objects ({ width, height, data })
-// so it runs in Node tests without a canvas. All coordinates are sheet
-// pixels (the 2048 UV sheet).
+// Pictures here are plain { width, height, data } RGBA objects, so the tests
+// run under node with no canvas. Positions are pixels of the sheet.
 
 import { uniqueRegionId } from './regions.js';
 
-// ---------- connected components ----------
+const midY = (r) => r.y + r.h / 2;
 
-// 4-connected components of alpha > thresh, as bounding rectangles sorted
-// top-to-bottom then left-to-right. Components under minArea pixels are
-// dropped (anti-aliasing crumbs, stray marks).
+// ---------- blocks ----------
+
+// The separate blocks of a picture: groups of pixels with alpha above thresh,
+// touching side to side (not corner to corner). Each comes back as its box and
+// pixel count, { x, y, w, h, area }, top to bottom, then left to right. Blocks
+// under minArea pixels are dropped as crumbs.
 export function alphaComponents(img, minArea = 300, thresh = 0) {
-  const W = img.width, H = img.height, d = img.data;
-  const seen = new Uint8Array(W * H);
-  const out = [];
-  const stack = [];
-  for (let start = 0; start < W * H; start++) {
-    if (seen[start] || d[start * 4 + 3] <= thresh) continue;
-    let x1 = W, y1 = H, x2 = -1, y2 = -1, area = 0;
-    stack.push(start);
-    seen[start] = 1;
-    while (stack.length) {
-      const i = stack.pop();
+  const { width: W, height: H, data } = img;
+  const solid = (i) => data[i * 4 + 3] > thresh;
+  const done = new Uint8Array(W * H);
+  const todo = [];
+  const blocks = [];
+  for (let first = 0; first < W * H; first++) {
+    if (done[first] || !solid(first)) continue;
+    const box = { left: W, top: H, right: -1, bottom: -1, area: 0 };
+    done[first] = 1;
+    todo.push(first);
+    while (todo.length) {
+      const i = todo.pop();
       const x = i % W, y = (i - x) / W;
-      area++;
-      if (x < x1) x1 = x; if (x > x2) x2 = x;
-      if (y < y1) y1 = y; if (y > y2) y2 = y;
-      if (x > 0 && !seen[i - 1] && d[(i - 1) * 4 + 3] > thresh) { seen[i - 1] = 1; stack.push(i - 1); }
-      if (x < W - 1 && !seen[i + 1] && d[(i + 1) * 4 + 3] > thresh) { seen[i + 1] = 1; stack.push(i + 1); }
-      if (y > 0 && !seen[i - W] && d[(i - W) * 4 + 3] > thresh) { seen[i - W] = 1; stack.push(i - W); }
-      if (y < H - 1 && !seen[i + W] && d[(i + W) * 4 + 3] > thresh) { seen[i + W] = 1; stack.push(i + W); }
+      box.area++;
+      box.left = Math.min(box.left, x); box.right = Math.max(box.right, x);
+      box.top = Math.min(box.top, y); box.bottom = Math.max(box.bottom, y);
+      const visit = (j) => { if (!done[j] && solid(j)) { done[j] = 1; todo.push(j); } };
+      if (x > 0) visit(i - 1);
+      if (x + 1 < W) visit(i + 1);
+      if (y > 0) visit(i - W);
+      if (y + 1 < H) visit(i + W);
     }
-    if (area >= minArea) out.push({ x: x1, y: y1, w: x2 - x1 + 1, h: y2 - y1 + 1, area });
+    if (box.area >= minArea) {
+      blocks.push({ x: box.left, y: box.top, w: box.right - box.left + 1, h: box.bottom - box.top + 1, area: box.area });
+    }
   }
-  out.sort((a, b) => a.y - b.y || a.x - b.x);
-  return out;
+  return blocks.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
 // ---------- twins ----------
 
-const cy = (r) => r.y + r.h / 2;
+// same column and same size, within tol
+const lookAlike = (a, b, tol) => Math.abs(a.x - b.x) <= tol && Math.abs(a.w - b.w) <= tol && Math.abs(a.h - b.h) <= tol;
 
-// two rectangles are vertical twins when they share an x-span and size
-// (within tol) and their centres mirror about `axis`
-function isTwin(a, b, axis, tol) {
-  return Math.abs(a.x - b.x) <= tol && Math.abs(a.w - b.w) <= tol && Math.abs(a.h - b.h) <= tol
-    && Math.abs((cy(a) + cy(b)) / 2 - axis) <= tol;
-}
+// twins: look alike and sit either side of the fold line `axis`, as far from it
+const areTwins = (a, b, axis, tol) => lookAlike(a, b, tol) && Math.abs((midY(a) + midY(b)) / 2 - axis) <= tol;
 
-// The sheet's mirror line. Most kits fold about y = 1024, but not all (the
-// BMW M4 GT4 folds about y ≈ 766), so the axis is voted from every pair of
-// same-size, same-column rectangles; ties fall back to `fallback`.
+// Where the sheet folds. Most kits fold at y = 1024, some elsewhere (the BMW
+// M4 GT4 at about 766). Every pair of look-alike boxes votes for the line
+// halfway between them; the line with most votes within tol wins, the one
+// nearer `fallback` on a tie. It needs at least two votes to count, and a
+// winner within tol of `fallback` is taken as `fallback` itself.
 export function detectMirrorAxis(rects, { tol = 6, fallback = 1024 } = {}) {
-  const mids = [];
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length; j++) {
-      const a = rects[i], b = rects[j];
-      if (Math.abs(a.x - b.x) <= tol && Math.abs(a.w - b.w) <= tol && Math.abs(a.h - b.h) <= tol) {
-        mids.push((cy(a) + cy(b)) / 2);
-      }
-    }
+  const votes = [];
+  rects.forEach((a, i) => rects.slice(i + 1).forEach((b) => {
+    if (lookAlike(a, b, tol)) votes.push((midY(a) + midY(b)) / 2);
+  }));
+  let line = fallback, support = 0;
+  for (const v of votes) {
+    const n = votes.filter(o => Math.abs(o - v) <= tol).length;
+    if (n > support || (n === support && Math.abs(v - fallback) < Math.abs(line - fallback))) { line = v; support = n; }
   }
-  if (!mids.length) return fallback;
-  let best = fallback, bestN = 0;
-  for (const m of mids) {
-    const n = mids.filter(o => Math.abs(o - m) <= tol).length;
-    const closer = Math.abs(m - fallback) < Math.abs(best - fallback);
-    if (n > bestN || (n === bestN && closer)) { best = m; bestN = n; }
-  }
-  // a lone coincidence is not an axis — only trust a cluster of >= 2 pairs
-  if (bestN < 2) return fallback;
-  // the standard fold wins when the vote lands within tolerance of it
-  return Math.abs(best - fallback) <= tol ? fallback : Math.round(best);
+  if (support < 2 || Math.abs(line - fallback) <= tol) return fallback;
+  return Math.round(line);
 }
 
-// index pairs [i, j] of twin rectangles; each rectangle joins one pair at most
+// The twins among rects, as index pairs [i, j] with i < j. Each box is in one
+// pair at most: the first twin found after it.
 export function pairTwins(rects, axis, tol = 6) {
-  const used = new Set();
+  const taken = new Set();
   const pairs = [];
-  for (let i = 0; i < rects.length; i++) {
-    if (used.has(i)) continue;
-    for (let j = i + 1; j < rects.length; j++) {
-      if (used.has(j)) continue;
-      if (isTwin(rects[i], rects[j], axis, tol)) { pairs.push([i, j]); used.add(i); used.add(j); break; }
-    }
-  }
+  rects.forEach((a, i) => {
+    if (taken.has(i)) return;
+    const j = rects.findIndex((b, k) => k > i && !taken.has(k) && areTwins(a, b, axis, tol));
+    if (j < 0) return;
+    pairs.push([i, j]);
+    taken.add(i).add(j);
+  });
   return pairs;
 }
 
-// ---------- zones → regions ----------
+// ---------- boxes as map regions ----------
 
-const KIND_LABEL = { sponsor: 'Sponsor', number: 'Number' };
-
-// Turn template zones ({ kind, x, y, w, h }) into region-map regions: ids
-// like sponsor_1, names like "Sponsor 3 (349×93)", twins paired as mirrors
-// with mirrorKind 'flipV' (a vertical twin, before any decal inference
-// refines it). `map` is only consulted for id collisions.
+// The kit's boxes ({ kind, x, y, w, h }) as regions for a map, top to bottom:
+// ids sponsor_1, number_2..., names like "Sponsor 3 (349×93)", and twins
+// paired as mirrors read top to bottom ('flipV') until the decals say
+// otherwise (applyOrientation). `map` is only looked at so ids don't clash.
+// → { regions, axis: the fold line used }
 export function zonesToRegions(zones, map, { axis, tol = 6 } = {}) {
-  const sorted = [...zones].sort((a, b) => a.y - b.y || a.x - b.x);
-  const counts = {};
-  const scratch = { regions: [...((map && map.regions) || [])] };
-  const regions = sorted.map(z => {
-    const label = KIND_LABEL[z.kind] || 'Zone';
-    const n = (counts[z.kind] = (counts[z.kind] || 0) + 1);
-    const id = uniqueRegionId(`${z.kind}_${n}`, scratch);
-    const r = {
-      id,
-      name: `${label} ${n} (${z.w}×${z.h})`,
-      x: z.x, y: z.y, w: z.w, h: z.h,
-      kind: z.kind, rot: 0,
-    };
-    scratch.regions.push(r);
+  const taken = { regions: [...(map?.regions ?? [])] };
+  const counts = { sponsor: 0, number: 0 };
+  const regions = [...zones].sort((a, b) => a.y - b.y || a.x - b.x).map((z) => {
+    const n = counts[z.kind] = (counts[z.kind] ?? 0) + 1;
+    const title = { sponsor: 'Sponsor', number: 'Number' }[z.kind] ?? 'Zone';
+    const r = { id: uniqueRegionId(`${z.kind}_${n}`, taken), name: `${title} ${n} (${z.w}×${z.h})`, x: z.x, y: z.y, w: z.w, h: z.h, kind: z.kind, rot: 0 };
+    taken.regions.push(r);
     return r;
   });
-  const ax = Number.isFinite(axis) ? axis : detectMirrorAxis(regions, { tol });
-  for (const [i, j] of pairTwins(regions, ax, tol)) {
-    regions[i].mirror = regions[j].id;
-    regions[j].mirror = regions[i].id;
-    regions[i].mirrorKind = regions[j].mirrorKind = 'flipV';
+  const fold = Number.isFinite(axis) ? axis : detectMirrorAxis(regions, { tol });
+  for (const [i, j] of pairTwins(regions, fold, tol)) {
+    const a = regions[i], b = regions[j];
+    a.mirror = b.id; b.mirror = a.id;
+    a.mirrorKind = b.mirrorKind = 'flipV';
   }
-  return { regions, axis: ax };
+  return { regions, axis: fold };
 }
 
-// ---------- decal orientation probes ----------
+// ---------- which way the decals read ----------
 
-// luminance × alpha of a rectangle of an RGBA image → { w, h, data }
+// A box of an RGBA picture as brightness weighted by alpha: { w, h, data }.
 export function blobGray(img, r) {
-  const out = new Float32Array(r.w * r.h);
+  const data = new Float32Array(r.w * r.h);
   for (let y = 0; y < r.h; y++) {
-    for (let x = 0; x < r.w; x++) {
-      const i = ((r.y + y) * img.width + (r.x + x)) * 4;
-      out[y * r.w + x] = (0.3 * img.data[i] + 0.59 * img.data[i + 1] + 0.11 * img.data[i + 2]) * (img.data[i + 3] / 255);
-    }
+    const px = img.data;
+    let i = ((r.y + y) * img.width + r.x) * 4;
+    for (let x = 0; x < r.w; x++, i += 4) data[y * r.w + x] = (0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]) * (px[i + 3] / 255);
   }
-  return { w: r.w, h: r.h, data: out };
+  return { w: r.w, h: r.h, data };
 }
 
-// Pearson correlation of B against A under a transform; both are centre-
-// cropped to their common size so near-identical twins (a pixel or two off)
-// still line up.
-function correlate(A, B, mapXY) {
-  const w = Math.min(A.w, B.w), h = Math.min(A.h, B.h);
-  const ax0 = (A.w - w) >> 1, ay0 = (A.h - h) >> 1, bx0 = (B.w - w) >> 1, by0 = (B.h - h) >> 1;
-  const n = w * h;
-  let sa = 0, sb = 0;
-  const av = new Float32Array(n), bv = new Float32Array(n);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const [sx, sy] = mapXY(x, y, w, h);
-      const a = A.data[(ay0 + sy) * A.w + ax0 + sx];
-      const b = B.data[(by0 + y) * B.w + bx0 + x];
-      av[y * w + x] = a; bv[y * w + x] = b;
-      sa += a; sb += b;
+// How alike two grey blobs are, -1..1 (Pearson correlation), with A's pixels
+// moved by from(x, y, w, h) → [x, y] first. Both are cut to the size they
+// share, about their middles, so twins a pixel or two apart still line up.
+function likeness(A, B, from) {
+  const w = Math.min(A.w, B.w), h = Math.min(A.h, B.h), n = w * h;
+  const ax = (A.w - w) >> 1, ay = (A.h - h) >> 1, bx = (B.w - w) >> 1, by = (B.h - h) >> 1;
+  const each = (fn) => {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const [sx, sy] = from(x, y, w, h);
+        fn(A.data[(ay + sy) * A.w + ax + sx], B.data[(by + y) * B.w + bx + x]);
+      }
     }
-  }
-  const ma = sa / n, mb = sb / n;
-  let num = 0, da = 0, db = 0;
-  for (let i = 0; i < n; i++) {
-    const a = av[i] - ma, b = bv[i] - mb;
-    num += a * b; da += a * a; db += b * b;
-  }
-  const den = Math.sqrt(da * db);
-  return den > 0 ? num / den : 0;
+  };
+  let sumA = 0, sumB = 0;
+  each((a, b) => { sumA += a; sumB += b; });
+  const meanA = sumA / n, meanB = sumB / n;
+  let cross = 0, varA = 0, varB = 0;
+  each((a, b) => {
+    const da = a - meanA, db = b - meanB;
+    cross += da * db; varA += da * da; varB += db * db;
+  });
+  const scale = Math.sqrt(varA * varB);
+  return scale > 0 ? cross / scale : 0;
 }
 
-// How blob B relates to blob A: 'rot180' (B is A turned 180°), 'flipV'
-// (B is A reflected top↔bottom) or 'same' (B is a plain copy). `margin` is
-// the lead over the runner-up — below ~0.1 the blob is too symmetric to tell.
+// How blob B relates to blob A: kind 'rot180' (A turned half way round),
+// 'flipV' (A mirrored top to bottom) or 'same' (an unturned copy), with each
+// score and the margin the best leads the next by. Below about 0.1 the blob
+// is too even to tell.
 export function twinRelation(A, B) {
   const scores = {
-    rot180: correlate(A, B, (x, y, w, h) => [w - 1 - x, h - 1 - y]),
-    flipV: correlate(A, B, (x, y, w, h) => [x, h - 1 - y]),
-    same: correlate(A, B, (x, y) => [x, y]),
+    rot180: likeness(A, B, (x, y, w, h) => [w - 1 - x, h - 1 - y]),
+    flipV: likeness(A, B, (x, y, w, h) => [x, h - 1 - y]),
+    same: likeness(A, B, (x, y) => [x, y]),
   };
-  const ranked = Object.entries(scores).sort((p, q) => q[1] - p[1]);
-  return { kind: ranked[0][0], margin: ranked[0][1] - ranked[1][1], scores };
+  const [[kind, best], [, next]] = Object.entries(scores).sort((p, q) => q[1] - p[1]);
+  return { kind, margin: best - next, scores };
 }
 
-// Find twin blobs in the kit's stock-decal composite and classify how each
-// pair reads. Returns [{ a, b, kind, margin }] with a the upper blob; only
-// confident pairs (margin ≥ minMargin) are kept.
+// The twin decals on the kit's stock-decal picture and how each pair reads:
+// [{ a: the upper blob, b: the lower, kind, margin }], keeping only pairs
+// read with a margin of at least minMargin. Decals are matched more loosely
+// than boxes: relTol of their size, plus 4 px.
 export function inferDecalPairs(img, { minArea = 400, axis = 1024, relTol = 0.15, minMargin = 0.1 } = {}) {
   const blobs = alphaComponents(img, minArea);
-  const grays = new Map();
-  const gray = (r) => { if (!grays.has(r)) grays.set(r, blobGray(img, r)); return grays.get(r); };
+  const greys = new Map();
+  const grey = (r) => greys.get(r) ?? greys.set(r, blobGray(img, r)).get(r);
   const pairs = [];
-  for (let i = 0; i < blobs.length; i++) {
-    for (let j = i + 1; j < blobs.length; j++) {
-      const a = blobs[i], b = blobs[j];
-      const tol = relTol * Math.max(a.w, a.h) + 4;
-      if (!isTwin(a, b, axis, tol)) continue;
-      const rel = twinRelation(gray(a), gray(b));
-      if (rel.margin < minMargin) continue;
-      pairs.push({ a: cy(a) <= cy(b) ? a : b, b: cy(a) <= cy(b) ? b : a, kind: rel.kind, margin: rel.margin });
-    }
-  }
+  blobs.forEach((a, i) => blobs.slice(i + 1).forEach((b) => {
+    if (!areTwins(a, b, axis, relTol * Math.max(a.w, a.h) + 4)) return;
+    const { kind, margin } = twinRelation(grey(a), grey(b));
+    if (margin < minMargin) return;
+    const [upper, lower] = midY(a) <= midY(b) ? [a, b] : [b, a];
+    pairs.push({ a: upper, b: lower, kind, margin });
+  }));
   return pairs;
 }
 
-// Give each region the reading of the nearest decal pair on its own half of
-// the sheet: in a 'rot180' pair the UPPER region gets rot = 180 (the lower
-// stays 0) and the mirror pair becomes mirrorKind 'rot180'; 'flipV' / 'same'
-// pairs keep rot 0 with the matching mirrorKind. Regions that straddle the
-// axis (centre-line panels) are left alone. Returns how many regions changed.
+// Each region takes the reading of the nearest decal pair, measured to that
+// pair's decal on the region's own side of the fold. In a 'rot180' pair the
+// upper region gets rot 180 and the lower keeps 0; a region with a twin gets
+// mirrorKind 'rot180', 'same' or 'flipV' to match. A region across the fold
+// (one in the middle of the car) is left as it is. Twins must agree: where
+// they don't, both take the reading of the one nearer its decal.
+// → how many regions changed
 export function applyOrientation(regions, pairs, axis = 1024) {
   if (!pairs.length) return 0;
-  const picks = new Map(); // region → { kind, dist }
+  const reads = new Map(); // region → { kind, dist, top }
   for (const r of regions) {
-    const rcy = cy(r), rcx = r.x + r.w / 2;
-    if (Math.abs(rcy - axis) < r.h / 2) continue; // straddles the fold
-    const top = rcy < axis;
-    let best = null;
+    const y = midY(r), x = r.x + r.w / 2;
+    if (Math.abs(y - axis) < r.h / 2) continue;
+    const top = y < axis;
     for (const p of pairs) {
-      const blob = top ? p.a : p.b;
-      const dist = Math.hypot(blob.x + blob.w / 2 - rcx, cy(blob) - rcy);
-      if (!best || dist < best.dist) best = { kind: p.kind, dist, top };
+      const d = top ? p.a : p.b;
+      const dist = Math.hypot(d.x + d.w / 2 - x, midY(d) - y);
+      if (!reads.has(r) || dist < reads.get(r).dist) reads.set(r, { kind: p.kind, dist, top });
     }
-    if (best) picks.set(r, best);
   }
-  // mirrored partners must agree — the closer probe wins for both
   const byId = new Map(regions.map(r => [r.id, r]));
   for (const r of regions) {
-    const m = r.mirror ? byId.get(r.mirror) : null;
-    if (!m || !picks.has(r) || !picks.has(m)) continue;
-    const pr = picks.get(r), pm = picks.get(m);
-    if (pr.kind !== pm.kind) {
-      const win = pr.dist <= pm.dist ? pr : pm;
-      picks.set(r, { ...pr, kind: win.kind });
-      picks.set(m, { ...pm, kind: win.kind });
-    }
+    const twin = byId.get(r.mirror);
+    const mine = reads.get(r), theirs = twin && reads.get(twin);
+    if (!mine || !theirs || mine.kind === theirs.kind) continue;
+    const kind = (mine.dist <= theirs.dist ? mine : theirs).kind;
+    reads.set(r, { ...mine, kind });
+    reads.set(twin, { ...theirs, kind });
   }
   let changed = 0;
-  for (const [r, p] of picks) {
-    const rot = p.kind === 'rot180' && p.top ? 180 : 0;
-    const mk = r.mirror ? (p.kind === 'rot180' ? 'rot180' : p.kind === 'same' ? 'same' : 'flipV') : undefined;
-    if ((r.rot || 0) !== rot || (mk && r.mirrorKind !== mk)) changed++;
+  for (const [r, { kind, top }] of reads) {
+    const rot = kind === 'rot180' && top ? 180 : 0;
+    const mirrorKind = r.mirror ? ({ rot180: 'rot180', same: 'same' }[kind] ?? 'flipV') : null;
+    if ((r.rot || 0) !== rot || (mirrorKind && r.mirrorKind !== mirrorKind)) changed++;
     r.rot = rot;
-    if (mk) r.mirrorKind = mk;
+    if (mirrorKind) r.mirrorKind = mirrorKind;
   }
   return changed;
 }
-
-// ---------- fit + bleed ----------

@@ -1,91 +1,68 @@
-// PSD template import — extracts the wireframe from official iRacing template PSDs
-// so users never need Photoshop. Uses ag-psd, vendored locally (js/vendor/ag-psd.min.js)
-// and lazy-loaded only when a .psd is actually opened (keeps the core app load lean,
-// with zero runtime CDN dependencies).
+// Reading iRacing's template PSDs (and GIMP files) without Photoshop: the
+// wireframe, the panels it outlines, the sponsor and number boxes, the stock
+// decals. The PSD reader (ag-psd, kept in js/vendor so nothing comes from a
+// CDN) is big, so it is only fetched the first time a .psd is opened.
 
 import { SIZE } from './engine.js';
 import { detectPieces } from './regions.js';
 import { alphaComponents } from './zones.js';
 import { readXcf } from './xcf.js';
 
-let agPsdPromise = null;
-
-function loadAgPsd() {
+let reader = null; // a promise of the PSD reader, once it has been asked for
+function psdReader() {
   if (window.agPsd) return Promise.resolve(window.agPsd);
-  if (!agPsdPromise) {
-    agPsdPromise = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'js/vendor/ag-psd.min.js';
-      s.onload = () => window.agPsd ? resolve(window.agPsd) : reject(new Error('PSD reader failed to initialize'));
-      s.onerror = () => { agPsdPromise = null; reject(new Error('Could not load the PSD reader')); };
-      document.head.appendChild(s);
-    });
-  }
-  return agPsdPromise;
+  reader ??= new Promise((resolve, reject) => {
+    const tag = Object.assign(document.createElement('script'), { src: 'js/vendor/ag-psd.min.js' });
+    tag.onload = () => (window.agPsd ? resolve(window.agPsd) : reject(new Error('PSD reader failed to initialize')));
+    tag.onerror = () => { reader = null; reject(new Error('Could not load the PSD reader')); }; // the next open tries again
+    document.head.append(tag);
+  });
+  return reader;
 }
 
-// Layer/group names that look like wireframe linework in iRacing template PSDs.
-const WIRE_RE = /(wire|outline|line\s?art|\blines?\b|contour|panel\s?lines|template\s?lines)/i;
-// Names that are clearly not reference linework even if a parent group matched.
-const SKIP_RE = /(background|bkg|paint\s?here|fill|color|colour|sample|example)/i;
+const blank = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
 
-// NOTE: official iRacing templates ship the wireframe layer ("Wire") hidden,
-// so hidden layers are still collected — visibility only matters for the
-// non-wireframe fallback composite.
-function collectLayers(children, parentMatched, parentHidden, out) {
-  for (const layer of children || []) {
+// Names kits give their wireframe layers or groups, and names that are never
+// linework, even inside a wireframe group.
+const WIRE_RE = /wire|outline|line\s?art|contour|\blines?\b|(panel|template)\s?lines/i;
+const SKIP_RE = /background|bkg|paint\s?here|fill|colou?r|sample|example/i;
+
+// Every pixel layer under `children`, as a flat list of { layer, wire: its
+// name or a group's says wireframe, hidden: it or a group it is in is turned
+// off }. Kits ship the wireframe turned off, so hidden layers are listed too.
+// With skipNamed, anything named as not linework (SKIP_RE) is left out, with
+// all it holds.
+function flatLayers(children, skipNamed, wire = false, hidden = false, out = []) {
+  for (const layer of children ?? []) {
     const name = layer.name || '';
-    if (SKIP_RE.test(name)) continue;
-    const matched = parentMatched || WIRE_RE.test(name);
-    const hidden = parentHidden || !!layer.hidden;
-    if (layer.children) {
-      collectLayers(layer.children, matched, hidden, out);
-    } else if (layer.canvas) {
-      out.push({ layer, matched, hidden });
-    }
+    if (skipNamed && SKIP_RE.test(name)) continue;
+    const w = wire || WIRE_RE.test(name), h = hidden || !!layer.hidden;
+    if (layer.children) flatLayers(layer.children, skipNamed, w, h, out);
+    else if (layer.canvas) out.push({ layer, wire: w, hidden: h });
   }
+  return out;
 }
 
-// every raster layer with its effective hidden state — no name filtering
-function collectAllLayers(children, parentHidden, out) {
-  for (const layer of children || []) {
-    const hidden = parentHidden || !!layer.hidden;
-    if (layer.children) collectAllLayers(layer.children, hidden, out);
-    else if (layer.canvas) out.push({ layer, hidden });
-  }
-}
-
-function drawLayers(ctx, entries) {
-  for (const { layer } of entries) {
-    ctx.globalAlpha = layer.opacity ?? 1;
-    ctx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
-  }
-  ctx.globalAlpha = 1;
+// layers drawn over each other on a clear canvas the file's size, each at its
+// place and at full strength
+function stack(layers, w, h) {
+  const c = blank(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  for (const l of layers) g.drawImage(l.canvas, l.left || 0, l.top || 0);
+  return c;
 }
 
 // Every wireframe layer at full strength on a clear canvas, colours as drawn.
 // `src` above puts the same layers on white, where a kit's white mesh lines
 // vanish; a caller that wants those too reads them from here.
-function wireCanvas(psd, wires) {
-  const c = document.createElement('canvas');
-  c.width = psd.width;
-  c.height = psd.height;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  for (const { layer } of wires) ctx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
-  return c;
-}
+const wireCanvas = (psd, wires) => stack(wires.map(e => e.layer), psd.width, psd.height);
 
 // Outlines of the sheet's pieces, read from the wireframe layers and scaled to
 // 2048-sheet space (see detectPieces). Empty when the wireframe does not split
 // into separate pieces, e.g. linework flattened onto an opaque background.
 function wirePieces(psd, wires) {
-  const c = document.createElement('canvas');
-  c.width = psd.width;
-  c.height = psd.height;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  // full strength, whatever the layer's opacity — only the line shapes matter
-  for (const { layer } of wires) ctx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
-  const px = ctx.getImageData(0, 0, c.width, c.height).data;
+  const c = wireCanvas(psd, wires); // full strength, whatever the layer's opacity: only the line shapes matter
+  const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
   const mask = new Uint8Array(c.width * c.height);
   for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
   const pieces = detectPieces(mask, c.width, c.height);
@@ -95,48 +72,27 @@ function wirePieces(psd, wires) {
 }
 
 // ---------- template intelligence (zones / decals) ----------
-// Official kits ship hidden helper layers: "Sponsor"/"Sponsor Blocks" and
-// "Numbers"/"Number Blocks" are solid rectangles marking the official decal
-// zones; "Car_decal" /
-// "Color Change Logos" / "IMSA LOGOS" hold the kit's stock decals, whose
-// orientation reveals how each panel reads. Hidden layers still carry a
-// canvas in ag-psd; every layer is positioned by its left/top offset.
+// Kits also carry turned-off helper layers. "Sponsor Blocks" and "Number
+// Blocks" (or "Sponsor", "Numbers") are filled boxes where decals officially
+// go. "Car_decal", "Color Change Logos" or "IMSA LOGOS" hold the kit's stock
+// decals, and which way up those read says which way up each panel is.
+// ag-psd gives turned-off layers their pixels too.
 
-const SPONSOR_RE = /sponsor/i;
-const NUMBER_RE = /number/i;
-const NUMBER_SKIP_RE = /leaderboard|official/i; // alt-series variants of the same blocks
+// 'sponsor', 'number' or null for a layer name; "leaderboard" and "official"
+// layers are the same number boxes for other series
+const zoneKind = (name) => (/sponsor/i.test(name) ? 'sponsor'
+  : /number/i.test(name) && !/leaderboard|official/i.test(name) ? 'number' : null);
 const DECAL_RE = /(decal|logos?)\b/i;
 
-function zoneKind(name) {
-  if (SPONSOR_RE.test(name)) return 'sponsor';
-  if (NUMBER_RE.test(name) && !NUMBER_SKIP_RE.test(name)) return 'number';
-  return null;
-}
-
-// one positioned composite of several layers (full opacity, alpha-over)
-function composeLayers(layers, w, h) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  for (const layer of layers) ctx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
-  return c;
-}
-
-// zones from the sponsor/number block layers: one rectangle per connected
-// component, crumbs under 300 px² dropped
+// the sponsor and number boxes: one per separate block on those layers,
+// blocks under 300 px² dropped as crumbs
 function extractZones(entries, w, h) {
-  const byKind = { sponsor: [], number: [] };
-  for (const { layer } of entries) {
-    const k = zoneKind(layer.name || '');
-    if (k) byKind[k].push(layer);
-  }
-  const zones = [];
-  for (const kind of ['sponsor', 'number']) {
-    if (!byKind[kind].length) continue;
-    const img = composeLayers(byKind[kind], w, h).getContext('2d').getImageData(0, 0, w, h);
-    for (const r of alphaComponents(img, 300)) zones.push({ kind, x: r.x, y: r.y, w: r.w, h: r.h });
-  }
-  return zones;
+  return ['sponsor', 'number'].flatMap((kind) => {
+    const layers = entries.map(e => e.layer).filter(l => zoneKind(l.name || '') === kind);
+    if (!layers.length) return [];
+    const img = stack(layers, w, h).getContext('2d').getImageData(0, 0, w, h);
+    return alphaComponents(img, 300).map(r => ({ kind, x: r.x, y: r.y, w: r.w, h: r.h }));
+  });
 }
 
 // The car's extra colours: iRacing colours parts beyond the paint from small
@@ -150,7 +106,7 @@ function extractSwatches(entries, w, h) {
   for (const [re, name] of SWATCH_KINDS) {
     const layers = entries.filter(e => re.test(e.layer.name || '')).map(e => e.layer);
     if (!layers.length) continue;
-    const img = composeLayers(layers, w, h).getContext('2d').getImageData(0, 0, w, h), d = img.data;
+    const img = stack(layers, w, h).getContext('2d').getImageData(0, 0, w, h), d = img.data;
     const found = alphaComponents(img, 4, 127);
     found.forEach((r, k) => {
       const i = ((r.y + (r.h >> 1)) * w + r.x + (r.w >> 1)) * 4;
@@ -161,7 +117,7 @@ function extractSwatches(entries, w, h) {
   // where the board's picture goes; its outline, with a colour of its own
   const boards = entries.filter(e => /pit\s*board/i.test(e.layer.name || '')).map(e => e.layer);
   if (boards.length) {
-    const px = composeLayers(boards, w, h).getContext('2d').getImageData(0, 0, w, h).data;
+    const px = stack(boards, w, h).getContext('2d').getImageData(0, 0, w, h).data;
     const mask = new Uint8Array(w * h);
     for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
     const [pts] = detectPieces(mask, w, h);
@@ -174,21 +130,24 @@ function extractSwatches(entries, w, h) {
   return out;
 }
 
-// visible stock-decal layers composed in place (hidden alt-series variants
-// would double every blob, so they stay out)
+// the stock decals that are showing, in place; the turned-off ones are the
+// same decals for other series and would count each decal twice
 function extractDecals(entries, w, h) {
-  const decals = entries.filter(e => !e.hidden && DECAL_RE.test(e.layer.name || '') && !zoneKind(e.layer.name || ''));
-  return decals.length ? composeLayers(decals.map(e => e.layer), w, h) : null;
+  const shown = entries.filter(e => !e.hidden && DECAL_RE.test(e.layer.name || '') && !zoneKind(e.layer.name || ''));
+  return shown.length ? stack(shown.map(e => e.layer), w, h) : null;
 }
 
-// Returns { src (PNG dataURL), usedWireframe (bool), pieces, zones, decals, swatches }
-//   pieces    — outlines of the sheet's pieces from the wireframe ([] when there are none)
-//   zones     — [{ kind: 'sponsor'|'number', x, y, w, h }] ([] when the kit has no block layers)
-//   decals    — RGBA canvas of the stock decals, for orientation probing (null if none)
-//   swatches  — [{ name, x, y, w, h, color, points? }]: the car's extra colour squares, and the pitboard by its outline ([] when the kit has none)
+// A template file → {
+//   src: the wireframe on white as a PNG data URL (the whole picture when no
+//     layer is named as wireframe; usedWireframe says which),
+//   pieces: outlines of the sheet's pieces, from the wireframe ([] without one),
+//   wire: the wireframe layers on a clear canvas (only with a wireframe),
+//   zones: [{ kind: 'sponsor' | 'number', x, y, w, h }] ([] without block layers),
+//   decals: the stock decals on a canvas, to read which way panels face (or null),
+//   swatches: [{ name, x, y, w, h, color, points? }]: the car's extra colour
+//     squares, and the pitboard by its outline ([] when the kit has none) }
 export async function psdToTemplate(arrayBuffer) {
-  const agPsd = await loadAgPsd();
-  return templateOf(agPsd.readPsd(arrayBuffer));
+  return templateOf((await psdReader()).readPsd(arrayBuffer));
 }
 // The same from a GIMP file, reading the pixels of only the layers a template
 // uses (or, with no wireframe, of what is shown, for the flattened picture)
@@ -201,42 +160,37 @@ export async function xcfToTemplate(buf) {
   } })));
 }
 function templateOf(psd) {
-
-  const out = document.createElement('canvas');
-  out.width = psd.width;
-  out.height = psd.height;
-  const ctx = out.getContext('2d');
-  // white base so the multiply overlay shows only the linework
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, out.width, out.height);
-
-  const entries = [];
-  collectLayers(psd.children, false, false, entries);
-  const wires = entries.filter(e => e.matched);
-
-  // helper layers are walked without SKIP_RE (it drops "Color Change Logos")
-  const all = [];
-  collectAllLayers(psd.children, false, all);
-  let intel = { zones: [], decals: null, swatches: [] };
+  const { width: w, height: h } = psd;
+  const sheet = blank(w, h);
+  const g = sheet.getContext('2d');
+  g.fillStyle = '#fff'; // white, so laid over the livery in multiply only the lines show
+  g.fillRect(0, 0, w, h);
+  const named = flatLayers(psd.children, true);
+  const wires = named.filter(e => e.wire);
+  // the helper layers are looked for without the name skip, which would drop "Color Change Logos"
+  const every = flatLayers(psd.children, false);
+  let extras = { zones: [], decals: null, swatches: [] };
   try {
-    intel = {
-      zones: extractZones(all, psd.width, psd.height),
-      decals: extractDecals(all, psd.width, psd.height),
-      swatches: extractSwatches(all, psd.width, psd.height),
-    };
-  } catch { /* intelligence is a bonus — the wireframe still loads */ }
-
+    extras = { zones: extractZones(every, w, h), decals: extractDecals(every, w, h), swatches: extractSwatches(every, w, h) };
+  } catch { /* extras only: the template opens without them */ }
+  const png = () => sheet.toDataURL('image/png');
   if (wires.length) {
-    drawLayers(ctx, wires);
-    return { src: out.toDataURL('image/png'), usedWireframe: true, pieces: wirePieces(psd, wires), wire: wireCanvas(psd, wires), ...intel };
+    paint(g, wires);
+    return { src: png(), usedWireframe: true, pieces: wirePieces(psd, wires), wire: wireCanvas(psd, wires), ...extras };
   }
-  // no wireframe-named layers — fall back to the flattened composite
-  if (psd.canvas) {
-    ctx.drawImage(psd.canvas, 0, 0);
-  } else {
-    drawLayers(ctx, entries.filter(e => !e.hidden));
+  // nothing named as wireframe: the whole picture, as it shows
+  if (psd.canvas) g.drawImage(psd.canvas, 0, 0);
+  else paint(g, named.filter(e => !e.hidden));
+  return { src: png(), usedWireframe: false, pieces: [], ...extras };
+}
+
+// layers drawn at their place and opacity
+function paint(g, entries) {
+  for (const { layer } of entries) {
+    g.globalAlpha = layer.opacity ?? 1;
+    g.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
   }
-  return { src: out.toDataURL('image/png'), usedWireframe: false, pieces: [], ...intel };
+  g.globalAlpha = 1;
 }
 
 // ---------- a livery PSD as layers ----------
@@ -256,8 +210,7 @@ const leftOut = (name, hidden, group) => (group ? SKIP_GROUP_RE : SKIP_LAYER_RE)
 
 // a layer's pixels with its mask's grey as their alpha
 function masked(c, l, m) {
-  const out = document.createElement('canvas');
-  out.width = c.width; out.height = c.height;
+  const out = blank(c.width, c.height);
   const g = out.getContext('2d');
   if (m.defaultColor) { g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); } // outside the mask's box: shown
   const mw = m.canvas.width, mh = m.canvas.height;
@@ -275,8 +228,7 @@ function masked(c, l, m) {
 
 // a clipped layer cut to the alpha of the layer it clips to
 function clipped(c, l, base) {
-  const out = document.createElement('canvas');
-  out.width = c.width; out.height = c.height;
+  const out = blank(c.width, c.height);
   const g = out.getContext('2d');
   g.drawImage(c, 0, 0);
   g.globalCompositeOperation = 'destination-in';
@@ -293,8 +245,7 @@ function clipped(c, l, base) {
 //     kit: it has the kit's wireframe, so it can be the template too,
 //     spec: the spec map group's shown layers as one canvas the file's size, or null }
 export async function psdToLayers(arrayBuffer) {
-  const agPsd = await loadAgPsd();
-  return layersOf(agPsd.readPsd(arrayBuffer));
+  return layersOf((await psdReader()).readPsd(arrayBuffer));
 }
 // The same from a GIMP file: only the layers that come in have their pixels read
 export async function xcfToLayers(buf) {
@@ -342,8 +293,7 @@ function layersOf(psd) {
       const x = ((l.left || 0) + c.width / 2) * kx, y = ((l.top || 0) + c.height / 2) * ky;
       let scale = kx, scaleY = ky === kx ? null : ky;
       if (kx < 1 || ky < 1) { // a bigger PSD's layers brought down to the sheet, as pictures are
-        const s = document.createElement('canvas');
-        s.width = Math.max(1, Math.round(c.width * kx)); s.height = Math.max(1, Math.round(c.height * ky));
+        const s = blank(Math.max(1, Math.round(c.width * kx)), Math.max(1, Math.round(c.height * ky)));
         const g = s.getContext('2d');
         g.imageSmoothingQuality = 'high';
         g.drawImage(c, 0, 0, s.width, s.height);
@@ -355,23 +305,21 @@ function layersOf(psd) {
   walk(psd.children, null, 1, false);
   let spec = null;
   if (specs.length) {
-    spec = document.createElement('canvas');
-    spec.width = psd.width; spec.height = psd.height;
+    spec = blank(psd.width, psd.height);
     const g = spec.getContext('2d');
     for (const l of specs) { g.globalAlpha = l.opacity ?? 1; g.drawImage(l.canvas, l.left || 0, l.top || 0); }
   }
   return { layers, lost, kit: hasWire(psd.children), spec };
 }
 
-// made from a kit: it has the kit's wireframe layer (named as collectLayers finds it)
+// made from a kit: it has the kit's wireframe layer (named as flatLayers finds it)
 function hasWire(ls, under = false) {
   return (ls || []).some(l => !SKIP_RE.test(l.name || '') && (l.children ? hasWire(l.children, under || WIRE_RE.test(l.name || '')) : under || WIRE_RE.test(l.name || '')));
 }
 
 // readXcf's tree as ag-psd has its own: pixels and masks on canvases
 function canvasOf(w, h, rgba) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
+  const c = blank(w, h);
   c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
   return c;
 }
