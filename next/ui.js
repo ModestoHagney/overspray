@@ -880,9 +880,14 @@ export function initUI(app, actions, version) {
 
   // Every colour box opens the app's own colour pop-up (see picker.js), which
   // has the livery's colours in it; the browser's own is never shown.
+  // While a colour is being chosen the panels are left alone (so they do not
+  // jump under the mouse); once it is let go of, or the pop-up closes, the
+  // swatches, chips and dots elsewhere catch up.
   const picker = initPicker({
     colours: () => ({ saved: app.doc.palette.map((c) => ({ name: c.name, color: hexOf(c.color) })).filter((c) => c.color), used: usedColours() }),
+    settled: () => refresh(),
   });
+  document.addEventListener('change', (e) => { if (e.target instanceof HTMLInputElement && e.target.type === 'color') refresh(); });
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement) || t.type !== 'color' || !t.id) return;

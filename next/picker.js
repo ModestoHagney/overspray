@@ -31,8 +31,9 @@ const DROPPER = '<svg viewBox="0 0 20 20"><path d="M4 16v-2.5l6.5-6.5 2.5 2.5L6.
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // colours(): → { saved: [{ name, color }], used: ['#rrggbb'] }, asked for each time the pop-up opens
+// settled(): the colour was let go of (a drag ended, a value typed) while the pop-up stays open
 // → { open(input), close() }
-export function initPicker({ colours }) {
+export function initPicker({ colours, settled = () => {} }) {
   const el = document.createElement('div');
   el.className = 'cpick'; el.hidden = true;
   el.innerHTML = '<div class="cp-dots" data-cp="dots"></div>' +
@@ -124,12 +125,15 @@ export function initPicker({ colours }) {
     const t = e.target;
     e.stopPropagation(); // the app listens for 'input' from its own boxes, not from these
     if (t.dataset.cp === 'hue') { h = +t.value; fromSquare(); return; }
-    if (t.dataset.cp === 'hex') { const c = parseHex(t.value); if (c) take(c); return; }
+    if (t.dataset.cp === 'hex') { const c = parseHex(t.value); if (c) { take(c); settled(); } return; }
     if (t.dataset.cp === 'rgb') {
       const boxes = [...part('val').children].map((b) => +b.value);
-      if (boxes.every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) take(rgbToHex(...boxes));
+      if (boxes.every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) { take(rgbToHex(...boxes)); settled(); }
     }
   });
+  // a drag on the square or the hue bar let go of, or the hue bar moved by its keys
+  el.addEventListener('pointerup', () => { if (changed && forId) settled(); });
+  el.addEventListener('change', () => { if (changed && forId) settled(); });
   el.addEventListener('change', (e) => e.stopPropagation());
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button');
