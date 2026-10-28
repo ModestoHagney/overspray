@@ -40,7 +40,7 @@ export function initPicker({ colours }) {
     '<input class="cp-hue" data-cp="hue" type="range" min="0" max="360" step="1" aria-label="Hue">' +
     `<div class="cp-row"><button type="button" class="icon" data-cp="drop" title="Pick a colour from anywhere on the screen" aria-label="Pick a colour from the screen">${DROPPER}</button>` +
     '<i class="cp-now" data-cp="now"></i><span class="cp-val" data-cp="val"></span>' +
-    '<button type="button" class="cp-mode" data-cp="mode" title="Switch between Hex and RGB"></button></div>';
+    '<button type="button" class="cp-mode" data-cp="mode" title="Switch between HEX and RGB"></button></div>';
   const part = (k) => el.querySelector(`[data-cp="${k}"]`);
   part('drop').hidden = !('EyeDropper' in window); // Chrome and Edge have it
 
