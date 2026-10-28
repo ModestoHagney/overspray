@@ -29,16 +29,17 @@ const SKIP_RE = /background|bkg|paint\s?here|fill|colou?r|sample|example/i;
 
 // Every pixel layer under `children`, as a flat list of { layer, wire: its
 // name or a group's says wireframe, hidden: it or a group it is in is turned
-// off }. Kits ship the wireframe turned off, so hidden layers are listed too.
+// off, kit: it is in the kit's "Turn Off Before Exporting TGA" group }. Kits
+// ship the wireframe turned off, so hidden layers are listed too.
 // With skipNamed, anything named as not linework (SKIP_RE) is left out, with
 // all it holds.
-function flatLayers(children, skipNamed, wire = false, hidden = false, out = []) {
+function flatLayers(children, skipNamed, wire = false, hidden = false, kit = false, out = []) {
   for (const layer of children ?? []) {
     const name = layer.name || '';
     if (skipNamed && SKIP_RE.test(name)) continue;
     const w = wire || WIRE_RE.test(name), h = hidden || !!layer.hidden;
-    if (layer.children) flatLayers(layer.children, skipNamed, w, h, out);
-    else if (layer.canvas) out.push({ layer, wire: w, hidden: h });
+    if (layer.children) flatLayers(layer.children, skipNamed, w, h, kit || SKIP_GROUP_RE.test(name), out);
+    else if (layer.canvas) out.push({ layer, wire: w, hidden: h, kit });
   }
   return out;
 }
@@ -96,36 +97,56 @@ function extractZones(entries, w, h) {
 }
 
 // The car's extra colours: iRacing colours parts beyond the paint from small
-// squares on the sheet, on layers such as "Pitbox Colors" (one to two squares)
-// and "Cockpit Color" (the MX5's roll cage). One per connected block, its
-// colour from its middle pixel, in 2048-sheet space, named for what it colours.
-const SWATCH_KINDS = [[/pit\s*box/i, 'Pit box'], [/cockpit/i, 'Cockpit']];
+// solid squares on the sheet, each on a layer named for the part: "Pitbox
+// Colors", the MX5's "Cockpit Color", "Rollbar Color", the IndyCar's wraps.
+// The pit box is found by name, as some kits turn it off; any other layer
+// that is showing, outside the kit's "Turn Off" group, and holds nothing but
+// such squares counts too. One per square, its colour from its middle pixel,
+// in 2048-sheet space, named for its layer.
+const SQUARE_MAX = 72; // longest side, in sheet px: pit box strips run to 66 x 24; the Mustang's 108 x 561 "Cockpit Banner" is a panel
+const PITBOX_RE = /pit\s*box/i;
+const NOT_SQUARES_RE = /pit\s*board|name\s*plate|mandatory|licen[cs]e/i;
+// areas iRacing shows in, by outline, under the livery: the pitboard (where the
+// board's picture goes; the Mustang's is four blocks round the windscreen) and
+// the Mustang's windscreen name plate. One per block; colour null: the kit's.
+const AREA_KINDS = [[/pit\s*board/i, 'Pitboard', '#ffffff'], [/name\s*plate/i, 'Name plate', null]];
+// "Rollbar Color" → "Rollbar", "Wheel Rings (Garage Option)" → "Wheel Rings"
+const partName = (name) => name.replace(/\(.*?\)|\bcolou?rs?\b/ig, '').replace(/[_\s]+/g, ' ').trim() || 'Colour';
+const hex = (d, i) => '#' + [d[i], d[i + 1], d[i + 2]].map(v => v.toString(16).padStart(2, '0')).join('');
 function extractSwatches(entries, w, h) {
-  const kx = SIZE / w, ky = SIZE / h, hex = (v) => v.toString(16).padStart(2, '0');
+  const kx = SIZE / w, ky = SIZE / h;
   const out = [];
-  for (const [re, name] of SWATCH_KINDS) {
+  const add = (img, found, name, dx = 0, dy = 0) => found.forEach((r, k) => out.push({
+    name: found.length > 1 ? `${name} ${k + 1}` : name,
+    x: Math.round((r.x + dx) * kx), y: Math.round((r.y + dy) * ky), w: Math.round(r.w * kx), h: Math.round(r.h * ky),
+    color: hex(img.data, ((r.y + (r.h >> 1)) * img.width + r.x + (r.w >> 1)) * 4),
+  }));
+  const pit = entries.filter(e => PITBOX_RE.test(e.layer.name || '')).map(e => e.layer);
+  if (pit.length) {
+    const img = stack(pit, w, h).getContext('2d').getImageData(0, 0, w, h);
+    add(img, alphaComponents(img, 4, 127), 'Pit box');
+  }
+  for (const e of entries) {
+    const name = e.layer.name || '', c = e.layer.canvas;
+    if (e.hidden || e.kit || e.wire || !c.width || !c.height || PITBOX_RE.test(name) || NOT_SQUARES_RE.test(name) || zoneKind(name) || DECAL_RE.test(name)) continue;
+    const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    const found = alphaComponents(img, 4, 127);
+    if (found.length && found.every(r => Math.max(r.w * kx, r.h * ky) <= SQUARE_MAX && r.area >= 0.8 * r.w * r.h)) add(img, found, partName(name), e.layer.left || 0, e.layer.top || 0);
+  }
+  for (const [re, name, color] of AREA_KINDS) {
     const layers = entries.filter(e => re.test(e.layer.name || '')).map(e => e.layer);
     if (!layers.length) continue;
-    const img = stack(layers, w, h).getContext('2d').getImageData(0, 0, w, h), d = img.data;
-    const found = alphaComponents(img, 4, 127);
-    found.forEach((r, k) => {
-      const i = ((r.y + (r.h >> 1)) * w + r.x + (r.w >> 1)) * 4;
-      out.push({ name: found.length > 1 ? `${name} ${k + 1}` : name, x: Math.round(r.x * kx), y: Math.round(r.y * ky), w: Math.round(r.w * kx), h: Math.round(r.h * ky), color: '#' + hex(d[i]) + hex(d[i + 1]) + hex(d[i + 2]) });
-    });
-  }
-  // the pitboard (oval cars and some others): an area on a "Pitboard" layer
-  // where the board's picture goes; its outline, with a colour of its own
-  const boards = entries.filter(e => /pit\s*board/i.test(e.layer.name || '')).map(e => e.layer);
-  if (boards.length) {
-    const px = stack(boards, w, h).getContext('2d').getImageData(0, 0, w, h).data;
+    const px = stack(layers, w, h).getContext('2d').getImageData(0, 0, w, h).data;
     const mask = new Uint8Array(w * h);
     for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 127 ? 1 : 0;
-    const [pts] = detectPieces(mask, w, h);
-    if (pts) {
+    const found = detectPieces(mask, w, h);
+    found.forEach((pts, k) => {
+      const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+      const mid = (Math.round((Math.min(...ys) + Math.max(...ys)) / 2) * w + Math.round((Math.min(...xs) + Math.max(...xs)) / 2)) * 4;
       const points = pts.map(q => ({ x: Math.round(q.x * kx), y: Math.round(q.y * ky) }));
-      const xs = points.map(q => q.x), ys = points.map(q => q.y), x = Math.min(...xs), y = Math.min(...ys);
-      out.push({ name: 'Pitboard', x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, points, color: '#ffffff' });
-    }
+      const x = Math.round(Math.min(...xs) * kx), y = Math.round(Math.min(...ys) * ky);
+      out.push({ name: found.length > 1 ? `${name} ${k + 1}` : name, x, y, w: Math.round(Math.max(...xs) * kx) - x, h: Math.round(Math.max(...ys) * ky) - y, points, color: color || hex(px, mid) });
+    });
   }
   return out;
 }
@@ -153,7 +174,8 @@ export async function psdToTemplate(arrayBuffer) {
 // uses (or, with no wireframe, of what is shown, for the flattened picture)
 export async function xcfToTemplate(buf) {
   const wire = hasWire((await readXcf(buf, { keep: () => false })).children);
-  const used = (x) => WIRE_RE.test(x.name) || zoneKind(x.name) || /pit\s*box|pit\s*board|cockpit/i.test(x.name) || DECAL_RE.test(x.name);
+  // a layer small enough to hold only colour squares is read too (see extractSwatches)
+  const used = (x) => WIRE_RE.test(x.name) || zoneKind(x.name) || /pit\s*box|pit\s*board|name\s*plate/i.test(x.name) || DECAL_RE.test(x.name) || (!x.hidden && x.w * x.h <= 512 * 512);
   return templateOf(withCanvases(await readXcf(buf, { keep: (n, up) => {
     const all = [n, ...up];
     return !all.some(x => PATTERN_RE.test(x.name)) && (wire ? all.some(used) : !all.some(x => x.hidden));
