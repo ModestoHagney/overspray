@@ -457,7 +457,7 @@ export function initMap(app, env) {
 
   const hint = () => {
     if (app.tool === 'hand') return 'Drag to move the sheet · wheel zooms · H or Esc puts it down';
-    if (!map()) return 'Load a template to get a map';
+    if (!map()) return 'Open a blank template to get a map';
     const takeBack = ' · Delete or Backspace takes one back';
     if (app.tool === 'mcentre') return (pending ? 'Click the matching corner on the other side' : 'Click a corner, then its match on the other side') + (app.centreFor ? '' : takeBack);
     if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;

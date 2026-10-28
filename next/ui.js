@@ -97,7 +97,7 @@ const TOOLS = [
   ['text', 'Text (T)'],
   ['image', 'Library'],
   ['piece', 'Fill panel (G). Shift+click adds to the same layer'],
-  ['cargrad', 'New car gradient'],
+  ['cargrad', 'Car gradient'],
   ['extras', 'Car extras: pit box, colour squares, pitboard'],
 ];
 // Finish mode: the same drawing tools, but what they draw is an area
@@ -121,7 +121,7 @@ const MAP_TOOLS = [
   ['mplace', 'Place a piece: where a loose part (a wing, say) sits on the car'],
 ];
 const PANELS = ['start', 'layers', 'props'];
-const FINISH_TIPS = { gloss: 'Shiny clear coat, like new paint', satin: 'A soft sheen, between gloss and matte', matte: 'Flat, no shine', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', chrome: 'A mirror: it reflects everything' };
+const FINISH_TIPS = { gloss: 'Shiny clear coat, like new paint', satin: 'A soft sheen, between Gloss and Matte', matte: 'Flat, no shine', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', chrome: 'A mirror: it reflects everything' };
 const WEIGHT_NAMES = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi bold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
 // A slider as one bar that fills up: its name inside on the left, its value
 // on the right. Dragged anywhere along it (Shift: slowly), or clicked to type.
@@ -184,7 +184,7 @@ export function initUI(app, actions, version) {
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
     ...shapeItems(), 0,
-    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim to panels', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
+    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
   ];
   const menuDefs = () => ({
@@ -237,7 +237,7 @@ export function initUI(app, actions, version) {
   function drawChrome() {
     drawMenus();
     const bare = !app.doc.template;
-    $('modes').innerHTML = [['map', 'Map', bare ? NEEDS : 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: gloss, matte, chrome']].map(([id, name, tip]) =>
+    $('modes').innerHTML = [['map', 'Map', bare ? NEEDS : 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: Gloss, Matte, Chrome']].map(([id, name, tip]) =>
       `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''}${bare && id === 'map' ? ' disabled' : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
     // drawing a shape: text is a picture and there are no panels to fill, so those two tools are put away
     const strip = app.workshop ? TOOLS.filter(([id]) => id !== 'text' && id !== 'piece' && id !== 'hand' && id !== 'cargrad' && id !== 'extras') : app.mode === 'map' ? MAP_TOOLS : app.mode === 'finish' ? FINISH_TOOLS : TOOLS;
@@ -433,7 +433,7 @@ export function initUI(app, actions, version) {
       const l0 = many.find((x) => x.id === app.sel) || many[0], turn = actions.manyTurn(); // null: nothing among them can turn
       return colourHead(`<span class="pname">${many.length} layers</span>`) +
         fold('f-place', 'Place', posBoxes() + (turn === null ? '' : slider('f-turn', -180, 180, turn, 'Turn', 'They turn as one, about their middle. A group keeps its angle; a loose selection starts at 0 each time.')) +
-          `<label class="switch" title="Where they hang over an edge linked in Map, they carry on onto the panel that edge meets. A piece placed over their panel in Map shows them too">Continue across edges<input id="f-continues" type="checkbox"${many.some((x) => x.continues) ? ' checked' : ''}></label>` +
+          `<label class="switch" title="Where they hang over an edge linked in the Map tab, they carry on onto the panel that edge meets. A piece placed over their panel in the Map tab shows them too">Continue across edges<input id="f-continues" type="checkbox"${many.some((x) => x.continues) ? ' checked' : ''}></label>` +
           `<div class="acts">${trimButtons(l0)}${mirroredBtn(many.some((x) => x.mirrored))}${trimClear(many.find((x) => trimCount(x)) || l0)}</div>`) +
         fold('f-look', 'Look', (fills.length ? fadeHtml(fills.find((x) => x.fillType === 'linear' || x.fillType === 'radial') || fills[0]) : '') +
           slider('f-opacity', 0, 100, (l0.opacity ?? 1) * 100, 'Opacity') +
@@ -476,7 +476,7 @@ export function initUI(app, actions, version) {
       (isPic ? slider('f-rotation', -180, 180, Math.round(l.rotation || 0), 'Turn') :
         l.type === 'fill' ? slider('f-turn', -180, 180, ((l.turn || 0) % 360 + 540) % 360 - 180, 'Turn') : '') +
       (isPic ? `<label class="switch" title="Off: it reads the right way round on both sides. On: a true mirror image.">Reverse the other side<input id="f-mirrorFlip" type="checkbox"${l.mirrorFlip ? ' checked' : ''}${l.mirrored ? '' : ' disabled'}></label>` : '') +
-      `<label class="switch" title="Where it hangs over an edge linked in Map, it carries on onto the panel that edge meets. A piece placed over its panel in Map shows it too">Continue across edges<input id="f-continues" type="checkbox"${l.continues ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Where it hangs over an edge linked in the Map tab, it carries on onto the panel that edge meets. A piece placed over its panel in the Map tab shows it too">Continue across edges<input id="f-continues" type="checkbox"${l.continues ? ' checked' : ''}></label>` +
       `<div class="acts">${trimButtons(l)}${mirroredBtn(l.mirrored)}<button class="btn" data-act="separate" title="Make the mirrored side a layer of its own"${l.mirrored ? '' : ' disabled'}>Separate</button>${trimClear(l)}</div>`;
     // a shape's fill can fade to a second colour, or to nothing
     const look = (l.type !== 'fill' ? '' : fadeHtml(l)) +
@@ -579,7 +579,7 @@ export function initUI(app, actions, version) {
   const section = (label) => `<option class="sect" disabled>${esc(label)}</option>`;
   function piecesHtml() {
     const list = pieces(app.doc.regionMap);
-    if (!list.length) return '<div class="note">Load a template to get a map</div>';
+    if (!list.length) return '<div class="note">Open a blank template to get a map</div>';
     if (app.tool === 'mpair') return pairsHtml(list);
     return list.map((r, i) => `<div class="row${r.id === app.piece ? ' sel' : ''}" data-piece="${esc(r.id)}"><span class="sw" style="background:${hue(i)}"></span><span class="name">${esc(r.name)}</span><span class="tags">${r.mirror ? '<i title="Has a twin">⇄</i>' : ''}${r.center ? '<i title="Has a centreline">┆</i>' : ''}</span></div>`).join('');
   }
@@ -630,7 +630,7 @@ export function initUI(app, actions, version) {
   }
   function pieceHtml() {
     const m = app.doc.regionMap, list = pieces(m);
-    if (!list.length) return '<div class="note">Load a template to get a map</div>' + libraryHtml();
+    if (!list.length) return '<div class="note">Open a blank template to get a map</div>' + libraryHtml();
     const r = list.find((x) => x.id === app.piece);
     const top = !r ? '<div class="note">Click a panel</div>'
       : field('Name', `<input id="m-name" type="text" value="${esc(r.name)}">`) +
@@ -1031,7 +1031,7 @@ export function initUI(app, actions, version) {
       title: save ? 'Save as a palette' : 'Livery colours', ok: save ? 'Save' : 'Apply',
       body: (save ? `<label><span>Palette name</span><input id="lc-name" type="text" maxlength="40" value="${esc(app.doc.name || 'My palette')}"></label>` : '<div class="note">Change a colour here and everything in it changes too.</div>') +
         rows.map((r, k) => `<div class="lcrow"><input id="lc-pick-${k}" type="color" value="${esc(r.color)}" title="Choose a colour" aria-label="Colour"><input id="lc-hex-${k}" class="mono" type="text" maxlength="7" spellcheck="false" value="${esc(r.color)}" aria-label="Hex">` +
-          `<input id="lc-n-${k}" type="text" maxlength="40" value="${esc(r.name)}" aria-label="Name"${k ? '' : ' disabled title="The base coat colour keeps this name, so it goes on the base coat wherever a palette of these is used"'}></div>`).join(''),
+          `<input id="lc-n-${k}" type="text" maxlength="40" value="${esc(r.name)}" aria-label="Name"${k ? '' : ' disabled title="The Base coat colour keeps this name, so it goes on the Base coat wherever a palette of these is used"'}></div>`).join(''),
     });
     rows.forEach((r, k) => {
       $('lc-pick-' + k).oninput = () => { $('lc-hex-' + k).value = $('lc-pick-' + k).value; };
@@ -1155,7 +1155,7 @@ export function initUI(app, actions, version) {
     let picked = null;
     const why = !shapes ? 'Text and pictures cannot be part of a shape.'
       : !sameColour ? 'These shapes are different colours. One shape has one colour.'
-      : 'These shapes have different settings (fade, finish, trim or Mirrored).';
+      : 'These shapes have different settings (Fade, Finish, Trim or Mirrored).';
     const oneShape = !shapes ? ''
       : !sameColour ? `<div class="sub">Make them all</div><div class="dots">${colours.map((c) => `<button type="button" class="dot big" data-pick="${esc(c)}" style="background:${esc(c)}" title="${esc(c.toUpperCase())}" aria-label="Make them all ${esc(c)}"></button>`).join('')}</div>`
       : `<button type="button" class="btn" data-pick="shape">One shape, like ${esc(top)}</button>`;
@@ -1195,7 +1195,7 @@ export function initUI(app, actions, version) {
     ]],
     ['Arrange', [
       ['Bring forward', ['Ctrl', ']']], ['Send backward', ['Ctrl', '[']], ['Bring to front', ['Ctrl', 'Shift', ']']], ['Send to back', ['Ctrl', 'Shift', '[']],
-      ['Group', ['Ctrl', 'G']], ['Ungroup', ['Ctrl', 'Shift', 'G']], ['Merge', ['Ctrl', 'E']], ['Mirror', ['Ctrl', 'M']],
+      ['Group', ['Ctrl', 'G']], ['Ungroup', ['Ctrl', 'Shift', 'G']], ['Merge', ['Ctrl', 'E']], ['Mirrored', ['Ctrl', 'M']],
     ]],
     ['Drawing', [
       ['Finish path', ['Enter']], ['Remove last point', ['Backspace']], ['Cancel', ['Esc']],

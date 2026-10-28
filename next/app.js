@@ -1073,7 +1073,7 @@ const actions = {
     const [paintName, specName] = paintFilenames(app.doc, validCustid(app.custid) ? app.custid : safeName());
     download(canvasToTGA(exportPaintCanvas(app.doc, paint())), paintName); // a helmet at 1024, as Save to iRacing writes it
     if (specName) download(canvasToTGA(renderSpec(shown()), { alpha: true }), specName);
-    ui.say(specName ? `${paintName} is the paint; ${specName} is the finish map` : `Exported ${paintName}`);
+    ui.say(specName ? `${paintName} is the paint; ${specName} is the spec map` : `Exported ${paintName}`);
   },
   exportPng() {
     paint().toBlob((b) => { if (b) download(b, safeName() + '.png'); }, 'image/png');
@@ -1099,7 +1099,7 @@ const actions = {
     download(blob, name);
     let why = null;
     if (app.doc.target === 'car') {
-      why = 'No finish file: add your iRacing account number, then send again.';
+      why = 'No spec map file: add your iRacing account number, then send again.';
       if (validCustid(app.custid)) try {
         const dir = await paintsDir(app.doc);
         if (!dir) throw 0; // no folder linked, or a reload dropped access to it
@@ -1108,7 +1108,7 @@ const actions = {
         if (!mip) why = 'No spec map file yet: Save to iRacing, open the car in iRacing once, then send again.';
         else if (tga && mip.lastModified < tga.lastModified) why = 'Spec map file is out of date: open the car in iRacing once, then send again.';
         else { download(mip, safeName() + '_spec.mip'); why = null; }
-      } catch { why = 'No finish file: turn on Live (or link the paints folder) so Overspray can read it, then send again.'; }
+      } catch { why = 'No spec map file: turn on Live (or link the paints folder) so Overspray can read it, then send again.'; }
     }
     if (why) { ui.say(`${name} downloaded. ${why}`, true); return; }
     // a few awaits in, the click still counts: browsers allow pop-ups for 5s after it
@@ -1116,7 +1116,7 @@ const actions = {
     const tab = window.open('https://www.tradingpaints.com/upload', '_blank');
     if (!tab) { ui.say('Allow pop-ups for this site, then send again', true); return; }
     tab.opener = null;
-    ui.say(app.doc.target === 'car' ? `Downloaded ${name} (paint) and ${safeName()}_spec.mip (finish)` : `Downloaded ${name}. Upload it as the paint.`);
+    ui.say(app.doc.target === 'car' ? `Downloaded ${name} (paint) and ${safeName()}_spec.mip (spec map)` : `Downloaded ${name}. Upload it as the paint.`);
   },
 
   setMode(mode) {
@@ -1355,7 +1355,7 @@ const actions = {
   // the left strip's Car extras: the pit box, colour squares, pitboard and name plate, in Properties
   openExtras() {
     if (needTemplate()) return;
-    if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, colour squares or pitboard, or it was not loaded as a PSD' : 'Load the car\'s template PSD first: these come from it', true); return; }
+    if (!(app.doc.swatches || []).length) { ui.say(app.doc.template ? 'This car\'s template has no pit box, colour squares or pitboard, or it was not loaded as a PSD' : 'Open the car\'s blank template (PSD) first: these come from it', true); return; }
     actions.select(swatchAt(app.sel) ? app.sel : 'sw0');
   },
   addCarGradient() {
@@ -2295,7 +2295,7 @@ const actions = {
       actions.setTool('select');
       app.sel = made[made.length - 1].id;
       change({ now: true });
-      const notes = [kept && `${kept} colours saved to the colour list`, areas && `the spec map as ${areas} Spec areas`, lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the file`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
+      const notes = [kept && `${kept} colours saved to the colour list`, areas && `the spec map as ${areas} spec areas`, lost.patterns && 'Car Patterns left out (iRacing\'s stock patterns are not imported)', lost.hidden && `${lost.hidden} turned off, as they were in the file`, lost.fx && `${lost.fx} without their effects (shadows, strokes)`, lost.blend && `${lost.blend} with a blend mode Overspray lacks, as normal`, lost.text && `${lost.text} text as pictures`].filter(Boolean);
       ui.say(`${made.length} layers added at the bottom` + (notes.length ? `: ${notes.join(', ')}` : ''), !!(lost.fx || lost.blend || lost.text)); // turned off is not a loss
     } catch (err) {
       ui.say('Could not read the layers in that file: ' + (err.message || 'unknown error'), true);
