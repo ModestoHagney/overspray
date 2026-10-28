@@ -41,7 +41,7 @@ and Live need Chrome or Edge; everything else works in other browsers.
 
 ## Credits
 
-Started as a fork of Clearcoat by OblivionsPeak; its code has since been
+Originally based on Clearcoat by OblivionsPeak; its code has since been
 rewritten. The name is set in Rubik Spray Paint
 (SIL Open Font License), from Google Fonts. Icons found through the search come
 from Game Icons (CC BY 3.0), Material Symbols and Material Design Icons
