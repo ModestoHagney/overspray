@@ -43,7 +43,7 @@ export async function listMaps() {
 }
 export const fetchMap = text;
 
-// ---------- Exclusion Zones ----------
+// ---------- Exclusion zones ----------
 // Where a league's broadcast decals go, one file per car, at
 // zones/<league>/<iRacing car folder>.json: { format, car, league, zones },
 // zones a list of closed outlines, each [[x, y], …] on the 2048 sheet. Drivers
@@ -62,7 +62,7 @@ export const listZones = async (league) => listed(await gh(`/contents/zones/${en
 // a zone file's text → { car, league, zones }; throws when it is not one
 export function parseZone(text) {
   const raw = JSON.parse(text);
-  if (!raw || raw.format !== 'overspray-zone' || !Array.isArray(raw.zones)) throw new Error('not an Exclusion Zone file');
+  if (!raw || raw.format !== 'overspray-zone' || !Array.isArray(raw.zones)) throw new Error('not an exclusion zone file');
   if (raw.zones.length > ZONE_MAX.zones) throw new Error('too many zones in one file');
   let n = 0;
   const ok = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 4096;
