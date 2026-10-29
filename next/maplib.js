@@ -43,6 +43,37 @@ export async function listMaps() {
 }
 export const fetchMap = text;
 
+// ---------- Exclusion Zones ----------
+// Where a league's broadcast decals go, one file per car, at
+// zones/<league>/<iRacing car folder>.json: { format, car, league, zones },
+// zones a list of closed outlines, each [[x, y], …] on the 2048 sheet. Drivers
+// see them on top of their paint; they are never painted.
+
+const ZONE_MAX = { zones: 500, points: 20000 };
+
+// → [{ name, url }] for the leagues (folders under zones/), or for the cars in one league
+const listed = (files, dirs) => (files || [])
+  .filter(f => (dirs ? f.type === 'dir' : f.type === 'file' && f.name.endsWith('.json')))
+  .map(f => ({ name: f.name, url: f.download_url }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+export const listLeagues = async () => listed(await gh('/contents/zones'), true);
+export const listZones = async (league) => listed(await gh(`/contents/zones/${encodeURIComponent(league)}`), false);
+
+// a zone file's text → { car, league, zones }; throws when it is not one
+export function parseZone(text) {
+  const raw = JSON.parse(text);
+  if (!raw || raw.format !== 'overspray-zone' || !Array.isArray(raw.zones)) throw new Error('not an Exclusion Zone file');
+  if (raw.zones.length > ZONE_MAX.zones) throw new Error('too many zones in one file');
+  let n = 0;
+  const ok = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 4096;
+  const zones = raw.zones.map((z) => {
+    if (!Array.isArray(z) || z.length < 3 || !z.every(p => Array.isArray(p) && ok(p[0]) && ok(p[1]))) throw new Error('a zone is not a closed outline');
+    if ((n += z.length) > ZONE_MAX.points) throw new Error('the zones have too many points');
+    return z.map(p => [p[0], p[1]]);
+  });
+  return { car: String(raw.car || ''), league: String(raw.league || ''), zones };
+}
+
 // ---------- review (admins) ----------
 
 // → the GitHub login, when the key can write to the repo; throws otherwise

@@ -302,6 +302,13 @@ function draw() {
     if (app.show.lines && L.borders) { ctx.globalAlpha = 0.85; ctx.drawImage(L.borders, 0, 0, SIZE, SIZE); }
     ctx.globalAlpha = 1;
   }
+  if (app.zone && app.zone.on) { // a league's Exclusion Zone, see-through so the paint under it shows
+    ctx.fillStyle = 'rgba(255, 40, 200, .45)';
+    ctx.fill(app.zone.path, 'evenodd');
+    ctx.strokeStyle = '#ff28c8';
+    ctx.lineWidth = 1.5 / app.view.zoom;
+    ctx.stroke(app.zone.path);
+  }
   ctx.restore();
 
   // screen space from here: lines stay hairline at any zoom
@@ -1441,6 +1448,41 @@ const actions = {
     const tab = window.open(maplib.uploadPage, '_blank');
     if (tab) tab.opener = null;
     ui.say(tab ? `Saved ${name}. Drop it onto the GitHub page that opened, then press Propose changes.` : 'Allow pop-ups for this site to open GitHub', !tab);
+  },
+
+  // ---- Exclusion Zones (see maplib.js): where a league's broadcast decals go,
+  // drawn over the paint so drivers keep things out from under them; never painted
+  zoneOn: () => !!(app.zone && app.zone.on),
+  async toggleZone() {
+    const z = app.zone;
+    if (z && z.on) { z.on = false; return actions.redraw(); }
+    if (z && z.for === zoneCar()) { z.on = true; return actions.redraw(); }
+    await actions.pickZoneLeague(z && z.league); // none yet, or another car now: this car's, from the same league
+  },
+  async pickZoneLeague(league) {
+    const mine = zoneCar(), now = app.zone && app.zone.league;
+    try {
+      if (!league) {
+        ui.say('Looking for Exclusion Zones…');
+        const leagues = await maplib.listLeagues();
+        league = await ui.pickList({ title: 'Exclusion Zone: pick a league', empty: 'No league has shared an Exclusion Zone yet.',
+          items: leagues.map(l => ({ id: l.name, name: l.name, note: l.name === now ? 'Showing now' : '' })) });
+        if (!league) return;
+      }
+      const cars = await maplib.listZones(league);
+      let url = (cars.find(f => f.name === mine) || {}).url;
+      if (!url) { // the car is not known, or this league has none for it
+        url = await ui.pickList({ title: app.doc.car ? `${league} has no Exclusion Zone for ${app.doc.car}: pick a car` : `${league}: pick the car`, empty: 'This league has no Exclusion Zones yet.',
+          items: cars.map(f => ({ id: f.url, name: f.name.replace(/\.json$/, '') })) });
+        if (!url) return;
+      }
+      const z = maplib.parseZone(await maplib.fetchMap(url)), file = cars.find(f => f.url === url).name;
+      const path = new Path2D();
+      for (const o of z.zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
+      app.zone = { league, file, path, on: true, for: mine }; // for: the car it was picked for, even when it is another car's
+      ui.say(`Showing ${league}'s Exclusion Zone for ${file.replace(/\.json$/, '')}`);
+      actions.redraw();
+    } catch (err) { ui.say('Could not load the Exclusion Zone: ' + err.message, true); }
   },
 
   // admins: a GitHub key of theirs that can write to the maps repo
@@ -2989,3 +3031,6 @@ if ('serviceWorker' in navigator) {
     document.addEventListener('visibilitychange', () => { if (!document.hidden) look(); });
   }).catch(() => { /* no worker (plain http on a LAN address): the page still works */ });
 }
+
+// the file name the open car's Exclusion Zone would have
+function zoneCar() { return maplib.mapFileName(app.doc.car, app.doc.regionMap && app.doc.regionMap.car); }
