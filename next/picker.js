@@ -147,12 +147,21 @@ export function initPicker({ colours, settled = () => {} }) {
     }
     if (b.dataset.cp === 'drop') new window.EyeDropper().open().then((r) => { const c = parseHex(r.sRGBHex); if (c && forId) take(c); }).catch(() => { /* Esc: nothing picked */ });
   });
-  // A press outside closes it. The box hears 'change' only after that press
-  // has become a click: a panel redrawn in between would swallow the click.
+  // A press outside closes it, and does nothing else: it does not also
+  // select, deselect or draw on what is under it. A press on another colour
+  // box goes through, so that box opens at once. The box hears 'change' only
+  // after that press has become a click: a panel redrawn in between would
+  // swallow the click.
   document.addEventListener('pointerdown', (e) => {
     if (el.hidden || el.contains(e.target)) return;
+    const eat = (c) => { c.stopPropagation(); c.preventDefault(); };
+    const other = e.target instanceof HTMLInputElement && e.target.type === 'color';
+    if (!other) { eat(e); addEventListener('click', eat, true); }
     const tell = close();
-    addEventListener('pointerup', () => setTimeout(tell, 0), { once: true, capture: true });
+    addEventListener('pointerup', (u) => {
+      if (!other) eat(u);
+      setTimeout(() => { removeEventListener('click', eat, true); tell?.(); }, 0); // the click comes before this
+    }, { once: true, capture: true });
   }, true);
   // While it is open the keys are its own: Esc and Enter close it, and nothing
   // typed here reaches the app's shortcuts (Delete would remove a layer).
