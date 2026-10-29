@@ -581,7 +581,7 @@ export function initTools(app, env) {
     const d = drag;
     drag = null;
     if (d.kind === 'marquee') {
-      if (!d.went) { if (app.sel !== null) env.select(null); return; }
+      if (!d.went) { if (app.sel !== null && !/^sw\d+$/.test(app.sel)) env.select(null); return; } // Car extras stay picked: Esc or a layer leaves them
       const x0 = Math.min(d.a.x, d.b.x), x1 = Math.max(d.a.x, d.b.x), y0 = Math.min(d.a.y, d.b.y), y1 = Math.max(d.a.y, d.b.y);
       env.selectMany(app.doc.layers.filter((l) => {
         if (!l.visible || l.locked || l.specOnly || l.car) return false;
