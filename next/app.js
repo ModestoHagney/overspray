@@ -1484,6 +1484,21 @@ const actions = {
       actions.redraw();
     } catch (err) { ui.say('Could not load the exclusion zone: ' + err.message, true); }
   },
+  // the zone on show painted onto the car, as Panel colours on car does with
+  // the panels: a locked sheet-sized layer on top, so the sim shows it too
+  async toggleZoneOnCar() {
+    const old = zoneLayer();
+    if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); change({ now: true }); ui.say('Exclusion zone is off the car'); return; }
+    if (!app.zone || !app.zone.zones) { ui.say('Show an exclusion zone first: View > Exclusion zone', true); return; }
+    const src = (await zonePicture(app.zone.zones, SIZE, false)).toDataURL('image/png');
+    const l = createImageLayer(await loadImage(src), src, ZONE_LAYER);
+    l.scale = 1;
+    l.locked = true; // sheet-sized: it must never be grabbed by a click
+    app.doc.layers.push(l);
+    change({ now: true });
+    ui.say('Exclusion zone is on the car. Switch this off before your real save.');
+  },
+  zoneOnCar: () => !!zoneLayer(),
   // the picked layers, as they are painted, made into this car's exclusion zone (only with ?zones):
   // everything they cover is in, whatever its colour or how see-through
   makeZone() {
@@ -3094,3 +3109,5 @@ async function zonePicture(zones, size, withTemplate) {
   g.fill(zonePath(zones), 'evenodd');
   return c;
 }
+const ZONE_LAYER = 'Exclusion zone'; // the layer that puts the zone on the car
+function zoneLayer() { return app.doc.layers.find(l => l.type === 'image' && l.locked && l.name === ZONE_LAYER) || null; }

@@ -216,6 +216,7 @@ export function initUI(app, actions, version) {
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
       ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
+      ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. Switch it off before your real save' }],
       ...(app.zonesAsk ? [['Submit exclusion zone…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []), 0,
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
