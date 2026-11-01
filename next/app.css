@@ -333,7 +333,7 @@ dialog.lib .dbody { height: 60vh; } /* the same size whichever tab is open */
 .tilex svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .tilewrap:hover .tilex, .tilex:focus-visible { opacity: 1; }
 .plist { display: flex; flex-direction: column; gap: 4px; }
-.zthumb { display: block; width: 240px; max-width: 100%; margin: 0 auto 10px; border: 1px solid var(--line); border-radius: 6px; }
+.zthumb { display: block; width: 320px; max-width: 100%; margin: 0 auto 10px; border: 1px solid var(--line); border-radius: 6px; }
 .plist button { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; text-align: left; width: 100%; }
 .plist button:hover { background: var(--hover); }
 .plist img { width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); object-fit: cover; flex: none; }
