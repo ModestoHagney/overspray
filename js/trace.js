@@ -235,3 +235,16 @@ export function traceImage(px, w, h, { tol = 0.3, max = 8, apart = 40 } = {}) {
   }
   return out;
 }
+
+// The outlines round what is there in a picture, whatever its colours: every
+// pixel more than half as solid as the most solid one is in, so a shape drawn
+// see-through (an exclusion zone at 80%) is traced on its own soft edge.
+// → [[[x, y], …], …], holes among them (fill them even-odd); bits under 4 px² are left out.
+export function solidOutlines(px, w, h, tol = 0.3) {
+  const field = new Float32Array(w * h);
+  let most = 0;
+  for (let i = 0; i < field.length; i++) { field[i] = px[i * 4 + 3] / 255; if (field[i] > most) most = field[i]; }
+  if (!most) return [];
+  return contours(field, w, h, most / 2).map((q) => simplify(q, tol)).filter((q) => q.length >= 3 && Math.abs(area2(q)) >= 8)
+    .map((q) => q.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]));
+}
