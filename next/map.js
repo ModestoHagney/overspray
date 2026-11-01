@@ -5,7 +5,7 @@
 // corrected.
 
 import { SIZE, createImageLayer, loadImage } from '../js/engine.js';
-import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, suggestPairs, MIRROR_KINDS } from '../js/regions.js';
+import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, suggestPairs, meshTicks, linkCandidates, suggestLinks, MIRROR_KINDS } from '../js/regions.js';
 import { pieceAt } from '../js/mirror.js';
 import { hexToRgb } from './picker.js';
 
@@ -68,6 +68,46 @@ export function pairList(m) {
   if (s !== pairCache.s) pairCache = { s, list: suggestPairs(m) };
   return pairCache.list;
 }
+// Suggested links (Link edges): edges whose mesh lines meet them at the same
+// spacing (see suggestLinks). Finding the candidates reads the template's
+// picture once (16 MB while it is read, let go after) and takes about a second
+// on a big map, so it is done again only when the panels or the template
+// change; what is linked or turned down since only re-picks from them.
+let linkCache = { s: null, src: null, cands: null, busy: null };
+const linkShape = (m) => JSON.stringify(m.regions.map(r => [r.id, r.mirror, r.points && r.points.length, r.x, r.y, r.w, r.h]));
+// → the suggestions, or null while they are being found (or with no template to find them from)
+export function linkList(doc, skip) {
+  const m = doc.regionMap, t = doc.template;
+  if (!m || !t || linkCache.src !== t.src || linkCache.s !== linkShape(m)) return null;
+  return suggestLinks(m, linkCache.cands, skip);
+}
+// finds them if they need finding; `done` is called once they are ready
+export function findLinks(doc, done) {
+  const m = doc.regionMap, t = doc.template;
+  if (!m || !t || !t.src) return;
+  const s = linkShape(m), src = t.src;
+  if (linkCache.src === src && linkCache.s === s) return;
+  if (linkCache.busy === s + src.length) return;
+  linkCache.busy = s + src.length;
+  loadImage(src).then((img) => new Promise((ok) => setTimeout(() => ok(img), 30))).then((img) => { // a frame for "Finding…" to show
+    const w = img.width, h = img.height, c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const px = g.getImageData(0, 0, w, h).data, k = w / SIZE; // the template may not be full size
+    // a line, as the template lines are drawn: far enough from white
+    const isLine = (x, y) => {
+      x = Math.round(x * k); y = Math.round(y * k);
+      if (x < 0 || y < 0 || x >= w || y >= h) return false;
+      const o = (y * w + x) * 4;
+      return (255 - Math.min(px[o], px[o + 1], px[o + 2])) * (px[o + 3] / 255) >= 40;
+    };
+    const ticks = new Map(pieces(m).map(r => [r.id, meshTicks(r, isLine)]));
+    linkCache = { s, src, cands: linkCandidates(m, ticks), busy: null };
+    done();
+  }, () => { linkCache.busy = null; });
+}
+
 // While the pairing list is open the sheet is grey, and the panels being
 // checked are pink (the first) and blue (the second), on the car too, so
 // even a piece too small for its name shows which is which
@@ -445,6 +485,7 @@ export function initMap(app, env) {
     }
     if (e.key !== 'Escape') return false;
     if (app.tool === 'mpair' && app.pairOpen) env.pairClose();
+    else if (app.tool === 'mlink' && app.linkOpen && !ends.length && !picked) env.linkClose();
     else if (pending) { pending = null; requestDraw(); env.refreshChrome(); }
     else if (pairFirst) { pairFirst = null; env.pickPiece(null); }
     else if (picked && app.tool === 'mlink') { picked = null; requestDraw(); env.refreshChrome(); }
@@ -463,6 +504,7 @@ export function initMap(app, env) {
     if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;
     if (app.tool === 'mpair') return (pairFirst ? `Now click the pair of ${nameOf(pairFirst)}` : 'Click a panel, then its pair on the other side of the car') + (!pairFirst && sel() && sel().mirror ? ' · F tries the next flip' : '') + takeBack;
     if (app.tool === 'mplace') return placing ? `Now drag the same line, front to back, where ${nameOf(placing.region)} sits on the car: over the panel it lies beside · Delete takes it back` : 'Drag a line along a loose piece (a wing, say), front to back. Placing it again moves it';
+    if (app.tool === 'mlink' && app.linkOpen && !ends.length) return 'Add link or Skip in the list · Esc closes the row · or click an edge on the sheet to link it by hand';
     if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click one end of an edge that meets another panel · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · Alt+click removes a link', 'Click the other end, on the same panel', 'Now the spot on the other panel that meets end 1', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
     return sel() ? 'Name it, pair it or set its centreline on the right' : 'Click a panel';
   };
@@ -538,6 +580,20 @@ export function initMap(app, env) {
     });
     ctx.lineCap = 'butt';
     if (app.tool === 'mlink') {
+      // a suggested link, open in the list or under the pointer there: its two stretches pink and blue, 1 where they start
+      const sug = (app.linkOpen && app.linkOpen.link) || app.linkHover;
+      if (sug) {
+        ['a', 'b'].forEach((side, k) => {
+          const pts = linkPoints(m, sug, side);
+          if (!pts.length) return;
+          ctx.beginPath(); pts.forEach((q, j) => { const a = S(q); j ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); });
+          ctx.lineCap = 'round'; ctx.strokeStyle = '#101114'; ctx.lineWidth = 10; ctx.stroke();
+          ctx.strokeStyle = PAIR_COLOURS[k]; ctx.lineWidth = 6; ctx.stroke(); ctx.lineCap = 'butt';
+          dot(pts[0], 8, PAIR_COLOURS[k]);
+          const a = S(pts[0]);
+          ctx.font = '700 11px "IBM Plex Mono", monospace'; ctx.fillStyle = '#ffffff'; ctx.fillText('1', a.x, a.y + 0.5);
+        });
+      }
       if (seam) { // this spot, and where it meets the other panel
         const a = S(seam.at), b = S(seam.partner);
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
