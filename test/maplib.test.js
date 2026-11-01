@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseZone } from '../next/maplib.js';
+import { parseZone, leagueName } from '../next/maplib.js';
 
 const zone = (zones, extra = {}) => JSON.stringify({ format: 'overspray-zone', car: 'supercars-mustang', league: 'test', zones, ...extra });
 const box = [[10, 10], [110, 10], [110, 60], [10, 60]];
@@ -20,4 +20,10 @@ test('anything else is turned away', () => {
   assert.throws(() => parseZone(zone([[[0, 0], [1e9, 0], [2, 2]]])), /closed outline/);
   assert.throws(() => parseZone(zone(Array(501).fill(box))), /too many zones/);
   assert.throws(() => parseZone('not json'));
+});
+
+test('a league name is made safe for its folder', () => {
+  assert.equal(leagueName('  Trackspot Racing League! '), 'trackspot-racing-league');
+  assert.equal(leagueName('GT3 -- Sprint'), 'gt3-sprint');
+  assert.equal(leagueName('!!!'), '');
 });

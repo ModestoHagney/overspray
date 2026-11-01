@@ -183,6 +183,7 @@ export function initUI(app, actions, version) {
     ['Send backward', 'Ctrl+[', 'backward', { off: !hasLayer() }], ['Send to back', 'Ctrl+Shift+[', 'back', { off: !hasLayer() }], 0,
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
+    ...(app.zonesAsk ? [['Make exclusion zone', '', 'makeZone', { off: !hasLayer(), tip: 'Everything this layer covers becomes the exclusion zone for this car' }]] : []),
     ...shapeItems(), 0,
     ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
@@ -214,7 +215,9 @@ export function initUI(app, actions, version) {
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
       ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
-      ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }], 0,
+      ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
+      ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. Switch it off before your real save' }],
+      ...(app.zonesAsk ? [['Submit exclusion zone…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []), 0,
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
@@ -639,7 +642,7 @@ export function initUI(app, actions, version) {
     const rv = app.review;
     if (rv) {
       return `<div class="note">Reviewing ${esc(rv.pr.file.replace(/^cars\//, ''))} · #${rv.pr.number} by ${esc(rv.pr.by)}</div>` +
-        `<div class="seg"><button data-act="reviewOld" aria-pressed="${rv.side === 'old'}"${rv.old ? '' : ' disabled title="A new car: there is no map for it yet"'}>Old</button><button data-act="reviewNew" aria-pressed="${rv.side === 'new'}">New</button></div>` +
+        (rv.zone ? '' : `<div class="seg"><button data-act="reviewOld" aria-pressed="${rv.side === 'old'}"${rv.old ? '' : ' disabled title="A new car: there is no map for it yet"'}>Old</button><button data-act="reviewNew" aria-pressed="${rv.side === 'new'}">New</button></div>`) +
         `<div class="acts"><button class="btn" data-act="reviewApprove" title="Merges it, with any fixes you made to New"${rv.busy ? ' disabled' : ''}>${rv.busy === 'merge' ? 'Merging…' : 'Merge'}</button><button class="btn" data-act="reviewReject" title="Closes the pull request without merging"${rv.busy ? ' disabled' : ''}>${rv.busy === 'reject' ? 'Closing…' : 'Reject'}</button></div>` +
         '<div class="acts"><button class="btn" data-act="reviewStop" title="Back to this livery\'s own map; the pull request stays open">Stop</button></div>';
     }
@@ -996,6 +999,18 @@ export function initUI(app, actions, version) {
     const p = ask({ title, ok, body: `<label><span>${esc(label)}</span><input id="dlg-text" type="text" value="${esc(value)}"></label>` });
     $('dlg-text').select();
     return (await p) ? $('dlg-text').value.trim() || null : null;
+  }
+  // the exclusion zone about to be sent: what it is for, and a look at it → { league, png, mesh }, or null
+  async function zoneSubmit({ car, folder, league, thumb }) {
+    const p = ask({ title: 'Submit exclusion zone', ok: 'Submit', body:
+      `<img class="zthumb" alt="The zone to be sent" src="${esc(thumb)}">` +
+      `<div class="note">Car: ${esc(car)}<br>Paints folder: ${esc(folder)}</div>` +
+      `<label><span>League</span><input id="z-league" type="text" value="${esc(league)}" placeholder="my-league"></label>` +
+      '<label class="switch" title="Also download the zone as a picture, to share with the drivers">Save PNG<input id="z-png" type="checkbox" checked></label>' +
+      '<label class="switch" title="Puts the template under the zone in the picture, so drivers can see where it sits">Include mesh<input id="z-mesh" type="checkbox"></label>' });
+    $('z-league').focus();
+    if (!await p) return null;
+    return { league: $('z-league').value, png: $('z-png').checked, mesh: $('z-mesh').checked };
   }
   const ago = (ts) => {
     const m = Math.round((Date.now() - ts) / 60000);
@@ -1399,5 +1414,5 @@ export function initUI(app, actions, version) {
 
   // put the cursor in a Properties box, ready to type over what is there
   const focusField = (id) => { const el = $(id); if (el) { el.focus(); if (el.select) el.select(); } };
-  return { layout, setLayout, refresh, refreshChrome, say, ask, askText, pickList, pickProject, carSetup, shortcuts, editColour, palettes, liveryColours, usedColours, focusField, library, mergeChoice };
+  return { layout, setLayout, refresh, refreshChrome, say, ask, askText, zoneSubmit, pickList, pickProject, carSetup, shortcuts, editColour, palettes, liveryColours, usedColours, focusField, library, mergeChoice };
 }

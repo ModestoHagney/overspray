@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { traceImage, flatColours, contours, simplify, paintColours, specAreas } from '../js/trace.js';
+import { traceImage, flatColours, contours, simplify, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { flatten, pieces as piecesOf } from '../js/shapes.js';
 
 // a picture as RGBA pixels, painted by f(x, y) → [r, g, b] or [r, g, b, a]
@@ -88,4 +88,16 @@ test('a spec map: the corners give the base finish, each other finish is an area
   assert.equal(got.areas.length, 1);
   assert.deepEqual(got.areas[0].rgb.map(Math.round), CHROME);
   assert.ok(Math.abs(areaOf(got.areas[0].pts) - 400) < 20);
+});
+
+test('solidOutlines traces what is there, however see-through, with its holes', () => {
+  // an 80% pink square from 10 to 40 with a clear 10 px hole in its middle, on nothing
+  const px = picture(50, 50, (x, y) => (x >= 10 && x < 40 && y >= 10 && y < 40 && !(x >= 20 && x < 30 && y >= 20 && y < 30) ? [255, 0, 204, 204] : [0, 0, 0, 0]));
+  const loops = solidOutlines(px, 50, 50);
+  assert.equal(loops.length, 2);
+  const area = (q) => Math.abs(q.reduce((s, p, i) => { const r = q[(i + 1) % q.length]; return s + p[0] * r[1] - r[0] * p[1]; }, 0) / 2);
+  const [outer, hole] = loops.map(area).sort((a, b) => b - a);
+  assert.ok(Math.abs(outer - 900) < 15, `outer ${outer}`);
+  assert.ok(Math.abs(hole - 100) < 8, `hole ${hole}`);
+  assert.deepEqual(solidOutlines(new Uint8ClampedArray(4 * 16), 4, 4), []);
 });

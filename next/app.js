@@ -24,7 +24,7 @@ import { hexToRgb } from './picker.js';
 import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasAim } from './tools.js';
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
-import { traceImage, paintColours, specAreas } from '../js/trace.js';
+import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink, linkList, findLinks } from './map.js';
 import { initCarGradient } from './cargrad.js';
@@ -82,6 +82,8 @@ export const app = {
   // only when the page is opened with ?admin, so nobody else sees it
   admin: null,
   adminAsk: /[?&]admin\b/.test(location.search),
+  // making exclusion zones: only when the page is opened with ?zones, so nobody makes one by accident
+  zonesAsk: /[?&]zones\b/.test(location.search),
   // a shared map being reviewed: { pr, prev (this livery's own map, put
   // back after), old, next (the maps; old is null for a new car), text, side }
   review: null,
@@ -305,9 +307,9 @@ function draw() {
     ctx.globalAlpha = 1;
   }
   if (app.zone && app.zone.on) { // a league's exclusion zone, see-through so the paint under it shows
-    ctx.fillStyle = 'rgba(255, 40, 200, .45)';
+    ctx.fillStyle = 'rgba(255, 0, 204, .45)'; // the broadcasters' own pink (#ff00cc)
     ctx.fill(app.zone.path, 'evenodd');
-    ctx.strokeStyle = '#ff28c8';
+    ctx.strokeStyle = '#ff00cc';
     ctx.lineWidth = 1.5 / app.view.zoom;
     ctx.stroke(app.zone.path);
   }
@@ -1519,12 +1521,58 @@ const actions = {
         if (!url) return;
       }
       const z = maplib.parseZone(await maplib.fetchMap(url)), file = cars.find(f => f.url === url).name;
-      const path = new Path2D();
-      for (const o of z.zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
-      app.zone = { league, file, path, on: true, for: mine }; // for: the car it was picked for, even when it is another car's
+      app.zone = { league, file, path: zonePath(z.zones), zones: z.zones, on: true, for: mine }; // for: the car it was picked for, even when it is another car's
       ui.say(`Showing ${league}'s exclusion zone for ${file.replace(/\.json$/, '')}`);
       actions.redraw();
     } catch (err) { ui.say('Could not load the exclusion zone: ' + err.message, true); }
+  },
+  // the zone on show painted onto the car, as Panel colours on car does with
+  // the panels: a locked sheet-sized layer on top, so the sim shows it too
+  async toggleZoneOnCar() {
+    const old = zoneLayer();
+    if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); change({ now: true }); ui.say('Exclusion zone is off the car'); return; }
+    if (!app.zone || !app.zone.zones) { ui.say('Show an exclusion zone first: View > Exclusion zone', true); return; }
+    const src = (await zonePicture(app.zone.zones, SIZE, false)).toDataURL('image/png');
+    const l = createImageLayer(await loadImage(src), src, ZONE_LAYER);
+    l.scale = 1;
+    l.locked = true; // sheet-sized: it must never be grabbed by a click
+    app.doc.layers.push(l);
+    change({ now: true });
+    ui.say('Exclusion zone is on the car. Switch this off before your real save.');
+  },
+  zoneOnCar: () => !!zoneLayer(),
+  // the picked layers, as they are painted, made into this car's exclusion zone (only with ?zones):
+  // everything they cover is in, whatever its colour or how see-through
+  makeZone() {
+    const ls = selectedLayers();
+    if (!ls.length) return;
+    const sheet = paintLayers(withSeams(withMirrors(withTints({ ...app.doc, layers: ls }))).layers, { linearEdges: true });
+    const zones = solidOutlines(sheet.getContext('2d').getImageData(0, 0, SIZE, SIZE).data, SIZE, SIZE);
+    sheet.width = sheet.height = 0; // let its 16 MB go now
+    if (!zones.length) { ui.say('Nothing to make a zone from: the layer is empty', true); return; }
+    app.zone = { league: null, file: zoneCar(), path: zonePath(zones), zones, on: true, for: zoneCar() };
+    ui.say(`Exclusion zone made: ${zones.length} ${zones.length === 1 ? 'area' : 'areas'}. Hide the layer to see it on its own.`);
+    actions.redraw();
+  },
+
+  // the zone on show, sent to the shared library by GitHub's upload page (as
+  // Share map does), after a look at it; and as a picture for the drivers
+  async submitZone() {
+    const z = app.zone;
+    if (!z || !z.zones) { ui.say('Make an exclusion zone first: right-click a layer > Make exclusion zone', true); return; }
+    if (!app.doc.car) { ui.say('Link your paints folder and choose the car first, so the zone gets the car\'s name', true); return; }
+    const file = maplib.mapFileName(app.doc.car);
+    const thumb = (await zonePicture(z.zones, 320, true)).toDataURL('image/png');
+    const got = await ui.zoneSubmit({ car: (app.doc.regionMap && app.doc.regionMap.car) || app.doc.car, folder: app.doc.car, league: app.zoneLeague || z.league || '', thumb });
+    if (!got) return;
+    const league = maplib.leagueName(got.league);
+    if (!league) { ui.say('Give the league a name first', true); return; }
+    app.zoneLeague = league;
+    download(new Blob([JSON.stringify({ format: 'overspray-zone', car: app.doc.car, league, zones: z.zones })], { type: 'application/json' }), file);
+    const tab = window.open(maplib.zoneUploadPage(league), '_blank');
+    if (tab) tab.opener = null;
+    if (got.png) (await zonePicture(z.zones, SIZE, got.mesh)).toBlob((b) => { if (b) download(b, file.replace(/\.json$/, '.png')); }, 'image/png');
+    ui.say(tab ? `Saved ${file}. Drop it onto the GitHub page that opened, then press Propose changes.` : 'Allow pop-ups for this site to open GitHub', !tab);
   },
 
   // admins: a GitHub key of theirs that can write to the maps repo
@@ -1549,11 +1597,18 @@ const actions = {
     ui.say('Looking for maps to review…');
     try { list = await maplib.openReviews(app.admin.key); } catch (err) { ui.say('Could not reach GitHub: ' + err.message, true); return; }
     const num = await ui.pickList({ title: 'Maps waiting for review', empty: 'Nothing waiting for review.',
-      items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, ''), note: `#${pr.number} by ${pr.by}` })) });
+      items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, '').replace(/^zones\/(.+)\/(.+)$/, '$2 (exclusion zone, $1)'), note: `#${pr.number} by ${pr.by}` })) });
     const pr = list.find(x => String(x.number) === num);
     if (!pr) return;
     try {
       const { next, now } = await maplib.reviewMaps(app.admin.key, pr);
+      if (pr.file.startsWith('zones/')) { // an exclusion zone: shown over the sheet, to merge or reject as it is
+        const z = maplib.parseZone(next);
+        app.review = { pr, zone: true, prev: app.doc.regionMap, prevZone: app.zone, side: 'new' };
+        app.zone = { league: z.league, file: maplib.carFile(pr.file).split('/').pop(), path: zonePath(z.zones), zones: z.zones, on: true, for: zoneCar() };
+        actions.redraw();
+        return;
+      }
       const prev = app.doc.regionMap;
       const map = await actions.loadMapText(next);
       if (!map) return;
@@ -1579,7 +1634,7 @@ const actions = {
   async reviewApprove() {
     const r = app.review;
     if (!r || r.busy) return; // a second click while GitHub is still merging
-    if (r.side === 'new') r.next = app.doc.regionMap;
+    if (r.side === 'new' && !r.zone) r.next = app.doc.regionMap;
     const now = JSON.stringify(r.next);
     r.busy = 'merge'; ui.refresh(); // the button says Merging… until GitHub answers
     try {
@@ -1606,6 +1661,7 @@ const actions = {
     if (!r) return;
     app.review = null;
     app.doc.regionMap = r.prev;
+    if (r.zone) app.zone = r.prevZone;
     app.piece = null;
     await actions.mapChanged();
     ui.refresh();
@@ -2236,6 +2292,7 @@ const actions = {
       img = await loadImage(src);
     } catch { /* one that cannot be read back (from another site) is kept as it is */ }
     const l = createImageLayer(img, src, name || 'Picture');
+    if (app.zonesAsk && img.width === SIZE && img.height === SIZE) l.scale = 1; // a sheet (someone's exclusion zones): over the whole sheet, to trace or make a zone from
     if (keep && !library.logos.some(x => x.src === src)) {
       library.logos.unshift({ id: 'g' + newId(), name: name || 'Picture', src });
       library.logos.length = Math.min(library.logos.length, 80); // ponytail: the oldest fall off; add folders if 80 is ever tight
@@ -3076,3 +3133,23 @@ if ('serviceWorker' in navigator) {
 
 // the file name the open car's exclusion zone would have
 function zoneCar() { return maplib.mapFileName(app.doc.car, app.doc.regionMap && app.doc.regionMap.car); }
+// zones ([[[x, y], …], …]) as one path, to fill even-odd
+function zonePath(zones) {
+  const path = new Path2D();
+  for (const o of zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
+  return path;
+}
+// zones as a picture `size` square: pink at 80% (as the broadcasters' own),
+// on nothing or, with the template, over it so you can see where they sit
+async function zonePicture(zones, size, withTemplate) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  if (withTemplate && app.doc.template) try { g.drawImage(await loadImage(app.doc.template.src), 0, 0, size, size); } catch { /* no template picture: the zone alone */ }
+  g.scale(size / SIZE, size / SIZE);
+  g.fillStyle = 'rgba(255, 0, 204, .8)';
+  g.fill(zonePath(zones), 'evenodd');
+  return c;
+}
+const ZONE_LAYER = 'Exclusion zone'; // the layer that puts the zone on the car
+function zoneLayer() { return app.doc.layers.find(l => l.type === 'image' && l.locked && l.name === ZONE_LAYER) || null; }
