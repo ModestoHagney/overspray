@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline, suggestPairs } from '../js/regions.js';
+import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline, suggestPairs, meshTicks, linkCandidates, suggestLinks } from '../js/regions.js';
 
 // Two doors, each the other's twin. Fields in `extra` replace the map's own.
 const rawMap = (extra = {}) => ({
@@ -652,4 +652,53 @@ test('panel names are cleaned: lowercase, no spaces or special characters', () =
   assert.equal(map.regions[0].name, 'bonnet_scoop');
   renameRegion(map, map.regions[0], '!!!'); // nothing left: the name stays as it was
   assert.equal(map.regions[0].name, 'bonnet_scoop');
+});
+
+// ---------------------------------------------------------------- suggested links
+
+// Two panels apart on the sheet whose mesh lines reach the shared edge at the
+// same uneven spacing: A's bottom edge meets B's top edge, B laid out the
+// other way round. `wB`: B's width (A's for a copy).
+function seamSheet(wB = 400, hB = 150) {
+  const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]; // clockwise on screen
+  const map = parseRegionMap(piecesRegionMap('test car', [rect(0, 0, 400, 200), rect(600, 0, wB, hB)]));
+  const at = [37, 90, 160, 230, 310, 355], atB = at.map(x => 600 + Math.round(x * wB / 400)); // along the seam, from each panel's left end, stretched with it
+  const isLine = (x, y) => (y >= 150 && y <= 200 && x <= 400 && at.includes(x)) || (y >= 0 && y <= 50 && atB.includes(x));
+  const ticks = new Map(map.regions.map(r => [r.id, meshTicks(r, isLine)]));
+  return { map, ticks };
+}
+const ends = (s) => s.link.a.region === 'piece_1' ? [s.link.a.from, s.link.a.to, s.link.b.from, s.link.b.to] : [s.link.b.from, s.link.b.to, s.link.a.from, s.link.a.to];
+
+test('mesh ticks: where mesh lines meet the outline, from just inside it', () => {
+  const { ticks } = seamSheet();
+  // A runs clockwise: 1200 px round to its bottom-right corner, then west along the bottom
+  const want = [37, 90, 160, 230, 310, 355].map(x => 600 + 400 - x).reverse(), got = ticks.get('piece_1');
+  assert.equal(got.length, want.length);
+  got.forEach((t, i) => assert.ok(Math.abs(t - want[i]) <= 1, `${t} vs ${want[i]}`));
+});
+
+test('two edges with the same mesh spacing are suggested as a link, ends meeting ends', () => {
+  const { map, ticks } = seamSheet(410);
+  const s = suggestLinks(map, linkCandidates(map, ticks));
+  assert.equal(s.length, 1);
+  const [a0, a1, b0, b1] = ends(s[0]);
+  const near = (p, x, y) => Math.hypot(p.x - x, p.y - y) < 1;
+  // a.from meets b.from: A's bottom-right corner with B's top-right one
+  assert.ok((near(a0, 400, 200) && near(a1, 0, 200) && near(b0, 1010, 0) && near(b1, 600, 0)) || (near(a0, 0, 200) && near(a1, 400, 200) && near(b0, 600, 0) && near(b1, 1010, 0)), JSON.stringify(s[0].link));
+  assert.ok(s[0].fit > 0.8 && !s[0].weak);
+  // the link made from it runs along the whole edge on both panels
+  assert.ok(Math.abs(linkPoints(map, s[0].link, 'a', 0, 1, 1).length - 401) <= 11);
+});
+
+test('no suggestion over an edge already linked, or one turned down', () => {
+  const { map, ticks } = seamSheet(410);
+  const cands = linkCandidates(map, ticks), [s] = suggestLinks(map, cands);
+  assert.equal(suggestLinks(map, cands, new Set([s.key])).length, 0);
+  map.links = [s.link];
+  assert.equal(suggestLinks(map, cands).length, 0);
+});
+
+test('panels that are copies of each other are not suggested as neighbours', () => {
+  const { map, ticks } = seamSheet(400, 200);
+  assert.equal(linkCandidates(map, ticks).length, 0);
 });

@@ -782,6 +782,209 @@ export function matchPoint(map, x, y, maxDist) {
   return best;
 }
 
+// ---------- suggested links ----------
+// Where two panels meet on the car, the car's mesh has the same vertices along
+// both edges, so the template's mesh lines reach the two edges at the same
+// spacing. That, more than the edges' shapes (most seams are near-straight,
+// so shape alone can't tell them apart), is what a suggestion rests on:
+//   1. meshTicks: where mesh lines meet each panel's outline (needs the template picture)
+//   2. linkCandidates: every pair of stretches whose ticks, length and shape agree (the slow part)
+//   3. suggestLinks: the best of those, each edge used once, leaving out what is linked already
+
+const LINK_SAMPLES = 32, LINK_MIN = 30, LINK_SLACK = 0.1;
+// binary-search version of atArc, for walking long outlines
+function arcAt(pts, cum, s) {
+  const L = cum[pts.length];
+  s = ((s % L) + L) % L;
+  let lo = 0, hi = pts.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (cum[m] <= s) lo = m; else hi = m - 1; }
+  const a = pts[lo], b = pts[(lo + 1) % pts.length], seg = cum[lo + 1] - cum[lo], t = seg ? (s - cum[lo]) / seg : 0;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, i: lo };
+}
+// > 0: the corners run clockwise on screen, so the inside is on the right going round
+const turnOf = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p.x * q.y - q.x * p.y; } return Math.sign(a) || 1; };
+const lowerBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < x) lo = m + 1; else hi = m; } return lo; };
+
+// Where mesh lines meet a panel's outline, as distances round it, in order:
+// walking 4 px inside the outline, each short run of line crossed (a line
+// running along the edge, a long run, is not a crossing).
+// isLine(x, y): whether the template has a line at that pixel.
+export function meshTicks(region, isLine) {
+  const pts = regionOutline(region), cum = arcs(pts), L = cum[pts.length], turn = turnOf(pts), out = [];
+  let run = 0, s0 = 0;
+  for (let s = 0; s < L; s++) {
+    const q = arcAt(pts, cum, s), a = pts[q.i], b = pts[(q.i + 1) % pts.length], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const x = Math.round(q.x - (b.y - a.y) / l * turn * 4), y = Math.round(q.y + (b.x - a.x) / l * turn * 4);
+    if (isLine(x, y)) { if (!run) s0 = s; run++; }
+    else if (run) { if (run <= 5) out.push(s0 + run / 2); run = 0; }
+  }
+  return out;
+}
+
+// Pairs of stretches that could meet on the car. One side runs corner to
+// corner (up to three edges); the other starts at a corner and runs as far,
+// to a corner when there is one within a tenth of that. Kept only when the
+// two have about as many ticks, at the same spacing, and the same shape once
+// turned and scaled, and when the panels lie on opposite sides of the join.
+// Panels that are copies of each other (left and right, a row of fins) match
+// along every edge, so they are never paired up here.
+// ticks: Map of region id → meshTicks. → [{ a, b, s0, lenA, c, dir, lenB, fit, ticks }]
+export function linkCandidates(map, ticks) {
+  const panels = map.regions.filter(r => !r.kind && ticks.has(r.id)).map(r => {
+    const pts = regionOutline(r), cum = arcs(pts), L = cum[pts.length], t = ticks.get(r.id);
+    const cs = [], n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[(i + n - 1) % n], b = pts[i], c = pts[(i + 1) % n];
+      const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y, k = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+      if (k && Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / k))) >= Math.PI / 4) cs.push(cum[i]);
+    }
+    const pre = new Uint16Array(Math.ceil(L) + 2); // ticks before each whole px, for counting them fast
+    for (let s = 0, j = 0; s < pre.length; s++) { while (j < t.length && t[j] < s) j++; pre[s] = j; }
+    return { r, pts, cum, L, cs, t, pre, turn: turnOf(pts), area: polygonArea(pts) };
+  });
+  const near = (p, q) => Math.abs(p - q) <= 0.05 * Math.max(p, q);
+  const copies = (A, B) => { const a = A.r, b = B.r; return ((near(a.w, b.w) && near(a.h, b.h)) || (near(a.w, b.h) && near(a.h, b.w))) && near(A.area, B.area); };
+  const at = (P, s) => arcAt(P.pts, P.cum, s);
+  const ticksBefore = (P, u) => { const k = Math.floor(u / P.L); return k * P.t.length + P.pre[Math.max(0, Math.min(P.pre.length - 1, Math.floor(u - k * P.L)))]; };
+  // the ticks inside a stretch, 2 px clear of its ends, as fractions along it
+  const within = (P, start, len, dir) => {
+    const a = dir === 1 ? start + 2 : start - len + 2, b = a + len - 4, out = [];
+    for (let k = Math.floor(a / P.L); k <= Math.floor(b / P.L); k++) for (let i = lowerBound(P.t, a - k * P.L), e = lowerBound(P.t, b - k * P.L); i < e; i++) out.push(P.t[i] + k * P.L);
+    return dir === 1 ? out.map(u => (u - start) / len) : out.reverse().map(u => (start - u) / len);
+  };
+  // share of ticks that land within 2% of one on the other side
+  const agree = (ta, tb) => {
+    let m = 0;
+    const used = new Uint8Array(tb.length);
+    for (const t of ta) {
+      let best = -1, bd = 0.02;
+      for (let j = lowerBound(tb, t - bd); j < tb.length && tb[j] <= t + bd; j++) if (!used[j] && Math.abs(tb[j] - t) <= bd) { bd = Math.abs(tb[j] - t); best = j; }
+      if (best >= 0) { used[best] = 1; m++; }
+    }
+    return 2 * m / (ta.length + tb.length);
+  };
+  const sample = (P, start, len, dir) => Array.from({ length: LINK_SAMPLES }, (_, k) => at(P, start + dir * len * k / (LINK_SAMPLES - 1)));
+  // how far apart two runs of points are once the second is turned and scaled onto the first, as a share of the length
+  const shapeMiss = (p, q, len) => {
+    const N = LINK_SAMPLES;
+    let px = 0, py = 0, qx = 0, qy = 0;
+    for (let k = 0; k < N; k++) { px += p[k].x; py += p[k].y; qx += q[k].x; qy += q[k].y; }
+    px /= N; py /= N; qx /= N; qy /= N;
+    let a = 0, b = 0, pp = 0, qq = 0;
+    for (let k = 0; k < N; k++) {
+      const x1 = p[k].x - px, y1 = p[k].y - py, x2 = q[k].x - qx, y2 = q[k].y - qy;
+      a += x1 * x2 + y1 * y2; b += y1 * x2 - x1 * y2; pp += x1 * x1 + y1 * y1; qq += x2 * x2 + y2 * y2;
+    }
+    const sc = qq ? Math.hypot(a, b) / qq : 1;
+    return Math.sqrt(Math.max(0, (pp - sc * sc * qq) / N)) / len;
+  };
+  const straightness = (P, start, len, dir) => { const p = at(P, start), q = at(P, start + dir * len); return Math.hypot(q.x - p.x, q.y - p.y) / len; };
+  const out = [];
+  for (const A of panels) {
+    const n = A.cs.length;
+    for (let i = 0; i < n; i++) for (let k = 1; k <= Math.min(3, n); k++) {
+      const s0 = A.cs[i], lenA = ((A.cs[(i + k) % n] - s0) % A.L + A.L) % A.L || A.L;
+      if (lenA < LINK_MIN || lenA > A.L * 0.75) continue;
+      const ta = within(A, s0, lenA, 1);
+      if (ta.length < 4) continue; // too few mesh lines to go on
+      const pa = sample(A, s0, lenA, 1), sa = straightness(A, s0, lenA, 1);
+      for (const B of panels) {
+        if (B === A || B.r.mirror === A.r.id || lenA * (1 - LINK_SLACK) > B.L * 0.75 || copies(A, B)) continue;
+        for (const c of B.cs) for (const dir of [1, -1]) {
+          if (A.turn * B.turn * dir !== -1) continue; // the two panels must lie either side of the join
+          const nb = ticksBefore(B, dir === 1 ? c + lenA - 2 : c - 2) - ticksBefore(B, dir === 1 ? c + 2 : c - lenA + 2);
+          if (nb < 2 || Math.abs(nb - ta.length) > 0.25 * Math.max(nb, ta.length) + 2) continue;
+          let lenB = lenA, corner = false;
+          const want = ((c + dir * lenA) % B.L + B.L) % B.L, j = lowerBound(B.cs, want), m = B.cs.length;
+          for (const c2 of [B.cs[(j + m - 1) % m], B.cs[j % m]]) {
+            const d = ((dir * (c2 - c)) % B.L + B.L) % B.L;
+            if (Math.abs(d - lenA) <= LINK_SLACK * lenA && (!corner || Math.abs(d - lenA) < Math.abs(lenB - lenA))) { lenB = d; corner = true; }
+          }
+          const tb = within(B, c, lenB, dir);
+          if (tb.length < 2 || Math.abs(ta.length - tb.length) > 0.25 * Math.max(ta.length, tb.length) + 1) continue;
+          if (Math.abs(straightness(B, c, lenB, dir) - sa) > 0.05) continue;
+          const tm = agree(ta, tb);
+          if (tm < 0.5) continue;
+          const miss = shapeMiss(pa, sample(B, c, lenB, dir), lenA);
+          if (miss > 0.04) continue;
+          const fit = (1 - miss / 0.04) * (1 - Math.abs(lenB - lenA) / lenA) * (corner ? 1 : 0.9) * tm * Math.min(1, Math.min(ta.length, tb.length) / 6);
+          out.push({ a: A.r.id, b: B.r.id, s0, lenA, c, dir, lenB, fit, ticks: Math.min(ta.length, tb.length) });
+        }
+      }
+    }
+  }
+  return out.sort((x, y) => y.fit - x.fit);
+}
+
+// The links to suggest, best first: each stretch of edge in at most one,
+// none over a stretch already linked or in `skip` (keys of suggestions turned
+// down). Two panels that come up along three or more separate edges are
+// copies of each other, not neighbours, and are dropped. weak: a loose fit,
+// or another candidate for the same edge fits nearly as well (left or right?).
+// → [{ key, link, fit, weak }]
+export function suggestLinks(map, cands, skip = new Set(), minFit = 0.45) {
+  const geo = new Map();
+  const P = (id) => {
+    if (!geo.has(id)) { const r = regionById(map, id), pts = r && regionOutline(r), cum = pts && arcs(pts); geo.set(id, r ? { pts, cum, L: cum[pts.length] } : null); }
+    return geo.get(id);
+  };
+  // the same two stretches whichever panel the candidate started from
+  const keyOf = (c) => {
+    const A = P(c.a), B = P(c.b), q = (G, s) => { const p = arcAt(G.pts, G.cum, s); return `${Math.round(p.x)},${Math.round(p.y)}`; };
+    return [`${c.a}:${[q(A, c.s0), q(A, c.s0 + c.lenA)].sort()}`, `${c.b}:${[q(B, c.c), q(B, c.c + c.dir * c.lenB)].sort()}`].sort().join('|');
+  };
+  // stretches already taken, per panel: [start, len, dir] (taken: share of ten spots along it covered)
+  const seed = () => {
+    const used = new Map();
+    for (const l of map.links || []) for (const side of ['a', 'b']) {
+      const st = linkStretch(map, l, side);
+      if (st) (used.get(l[side].region) || used.set(l[side].region, []).get(l[side].region)).push([st.start, st.len, st.dir]);
+    }
+    return used;
+  };
+  const taken = (G, s, len, dir, list) => list.some(([s2, len2, dir2]) => {
+    let hit = 0;
+    for (let k = 0; k < 10; k++) { const u = s + dir * len * (k + 0.5) / 10, d = ((dir2 * (u - s2)) % G.L + G.L) % G.L; if (d <= len2) hit++; }
+    return hit > 3;
+  });
+  const pairKey = (c) => (c.a < c.b ? `${c.a}|${c.b}` : `${c.b}|${c.a}`);
+  const pick = (ban) => {
+    const used = seed(), out = [];
+    for (const c of cands) {
+      if (c.fit < minFit) break;
+      const A = P(c.a), B = P(c.b);
+      if (!A || !B || ban.has(pairKey(c)) || skip.has(keyOf(c))) continue;
+      const ua = used.get(c.a) || [], ub = used.get(c.b) || [];
+      if (taken(A, c.s0, c.lenA, 1, ua) || taken(B, c.c, c.lenB, c.dir, ub)) continue;
+      ua.push([c.s0, c.lenA, 1]); ub.push([c.c, c.lenB, c.dir]); used.set(c.a, ua); used.set(c.b, ub);
+      out.push(c);
+    }
+    return out;
+  };
+  const ban = new Set();
+  let picks = pick(ban);
+  for (let round = 0; round < 3; round++) {
+    const n = new Map();
+    for (const c of picks) n.set(pairKey(c), (n.get(pairKey(c)) || 0) + 1);
+    const more = [...n].filter(([, v]) => v >= 3).map(([k]) => k);
+    if (!more.length) break;
+    for (const k of more) ban.add(k);
+    picks = pick(ban);
+  }
+  const pt = (q) => ({ x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 });
+  return picks.map(c => {
+    const A = P(c.a), B = P(c.b);
+    const rival = cands.some(o => o !== c && o.a === c.a && Math.abs(o.s0 - c.s0) < 1 && Math.abs(o.lenA - c.lenA) < 1 && o.b !== c.b && o.fit > c.fit - 0.05);
+    return {
+      key: keyOf(c), fit: c.fit, weak: c.fit < 0.7 || rival,
+      link: {
+        a: { region: c.a, from: pt(arcAt(A.pts, A.cum, c.s0)), to: pt(arcAt(A.pts, A.cum, c.s0 + c.lenA)), dir: 1 },
+        b: { region: c.b, from: pt(arcAt(B.pts, B.cum, c.c)), to: pt(arcAt(B.pts, B.cum, c.c + c.dir * c.lenB)), dir: c.dir },
+      },
+    };
+  });
+}
+
 // The matrix { a, b, c, d, e, f } (a canvas transform) that lands p0 on q0
 // and p1 on q1: turned and scaled to fit, after reflecting about the line
 // p0-p1 when `reflect`. Null if either line has no length.

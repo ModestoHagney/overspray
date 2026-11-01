@@ -582,6 +582,7 @@ export function initUI(app, actions, version) {
     const list = pieces(app.doc.regionMap);
     if (!list.length) return '<div class="note">Open a blank template to get a map</div>';
     if (app.tool === 'mpair') return pairsHtml(list);
+    if (app.tool === 'mlink') return linksHtml(list);
     return list.map((r, i) => `<div class="row${r.id === app.piece ? ' sel' : ''}" data-piece="${esc(r.id)}"><span class="sw" style="background:${hue(i)}"></span><span class="name">${esc(r.name)}</span><span class="tags">${r.mirror ? '<i title="Has a twin">⇄</i>' : ''}${r.center ? '<i title="Has a centreline">┆</i>' : ''}</span></div>`).join('');
   }
   // Pair panels: the twins suggested, to check one by one; then the panels
@@ -614,6 +615,23 @@ export function initUI(app, actions, version) {
       part('No match found', none.map((r) => row(r.id, r.name))) +
       part('Paired', twins.map((r) => row(`${r.id}|${r.mirror}`, [r.name, nameOf(r.mirror)]))) +
       part('No pair', singles.map((r) => row(r.id, r.name)));
+  }
+  // Link edges: links suggested from the template's mesh lines, to check one
+  // by one. A row opens (its two edges pink and blue on the sheet) to add or skip it.
+  function linksHtml(list) {
+    if (!app.doc.template) return '<div class="note">Open the blank template to get suggestions</div>';
+    const sugs = actions.linkSuggestions(), o = app.linkOpen;
+    if (!sugs) return '<div class="note">Finding edges that meet…</div>';
+    const nameOf = (id) => (list.find((r) => r.id === id) || { name: id }).name;
+    const box = '<div class="pairbox"><div class="acts"><button class="btn" data-act="linkAdd" title="Links these two edges, and their twins on the other side of the car">Add link</button>' +
+      '<button class="btn" data-act="linkSkip" title="Not suggested again this visit">Skip</button></div>' +
+      '<div class="note">On the car the pink edge meets the blue one, the two 1 ends together. Fine-tune the ends on the sheet after</div></div>';
+    const rows = sugs.map((g) => {
+      const on = o && o.key === g.key;
+      return `<div class="row${on ? ' sel' : ''}" data-linkrow="${esc(g.key)}" title="${g.weak ? 'A loose match, or another edge matches nearly as well: check it' : 'Their mesh lines meet both edges at the same spacing'}"><span class="name two"><span>${esc(nameOf(g.link.a.region))}</span><i>⇄</i><span>${esc(nameOf(g.link.b.region))}</span></span><span class="tags${g.weak ? ' weak' : ''}">${Math.round(g.fit * 100)}%</span></div>` + (on ? box : '');
+    });
+    return (rows.length ? '<div class="sub">Check these</div>' + rows.join('') : '<div class="note">No more suggestions</div>') +
+      '<div class="note">Or click an edge on the sheet to link it by hand</div>';
   }
   // the shared map library: browse and share for everyone; review for admins
   // (see maplib.js), only offered when the page was opened with ?admin
@@ -872,8 +890,10 @@ export function initUI(app, actions, version) {
   panels.layers.addEventListener('pointerover', (e) => {
     const row = e.target.closest && e.target.closest('[data-pairrow]');
     actions.pairHover(row ? row.dataset.pairrow.split('|') : null);
+    const lrow = e.target.closest && e.target.closest('[data-linkrow]');
+    actions.linkHoverSet(lrow ? lrow.dataset.linkrow : null);
   });
-  panels.layers.addEventListener('pointerleave', () => actions.pairHover(null));
+  panels.layers.addEventListener('pointerleave', () => { actions.pairHover(null); actions.linkHoverSet(null); });
   panels.layers.addEventListener('change', (e) => {
     if (e.target.dataset.rname) actions.pairRename(e.target.dataset.rname, e.target.value.trim());
   });
@@ -1264,6 +1284,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.fstopdrop !== undefined) return actions.dropFadeColour(+t.dataset.fstopdrop);
     if (t.dataset.piece) return actions.pickPiece(t.dataset.piece);
     if (t.dataset.pairrow) return actions.pairOpen(t.dataset.pairrow);
+    if (t.dataset.linkrow) return actions.linkRow(t.dataset.linkrow);
     if (t.dataset.tool === 'image') return actions.openLibrary(); // nothing to arm: it opens the library
     if (t.dataset.tool === 'extras') return actions.openExtras(); // nor here: it shows the car's extras in Properties
     if (t.dataset.tool === 'cargrad') return actions.addCarGradient(); // nor here: it adds one and opens its window
