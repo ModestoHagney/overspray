@@ -1498,6 +1498,26 @@ const actions = {
     actions.redraw();
   },
 
+  // the zone on show, sent to the shared library by GitHub's upload page (as
+  // Share map does), after a look at it; and as a picture for the drivers
+  async submitZone() {
+    const z = app.zone;
+    if (!z || !z.zones) { ui.say('Make an exclusion zone first: right-click a layer > Make exclusion zone', true); return; }
+    if (!app.doc.car) { ui.say('Link your paints folder and choose the car first, so the zone gets the car\'s name', true); return; }
+    const file = maplib.mapFileName(app.doc.car);
+    const thumb = (await zonePicture(z.zones, 240, true)).toDataURL('image/png');
+    const got = await ui.zoneSubmit({ car: (app.doc.regionMap && app.doc.regionMap.car) || app.doc.car, folder: app.doc.car, league: app.zoneLeague || z.league || '', thumb });
+    if (!got) return;
+    const league = maplib.leagueName(got.league);
+    if (!league) { ui.say('Give the league a name first', true); return; }
+    app.zoneLeague = league;
+    download(new Blob([JSON.stringify({ format: 'overspray-zone', car: app.doc.car, league, zones: z.zones })], { type: 'application/json' }), file);
+    const tab = window.open(maplib.zoneUploadPage(league), '_blank');
+    if (tab) tab.opener = null;
+    if (got.png) (await zonePicture(z.zones, SIZE, got.mesh)).toBlob((b) => { if (b) download(b, file.replace(/\.json$/, '.png')); }, 'image/png');
+    ui.say(tab ? `Saved ${file}. Drop it onto the GitHub page that opened, then press Propose changes.` : 'Allow pop-ups for this site to open GitHub', !tab);
+  },
+
   // admins: a GitHub key of theirs that can write to the maps repo
   async adminSignIn() {
     const key = await ui.askText({ title: 'Sign in to review maps', label: 'GitHub key', ok: 'Sign in' });
@@ -1520,11 +1540,18 @@ const actions = {
     ui.say('Looking for maps to review…');
     try { list = await maplib.openReviews(app.admin.key); } catch (err) { ui.say('Could not reach GitHub: ' + err.message, true); return; }
     const num = await ui.pickList({ title: 'Maps waiting for review', empty: 'Nothing waiting for review.',
-      items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, ''), note: `#${pr.number} by ${pr.by}` })) });
+      items: list.map(pr => ({ id: String(pr.number), name: pr.file.replace(/^cars\/|\.json$/g, '').replace(/^zones\/(.+)\/(.+)$/, '$2 (exclusion zone, $1)'), note: `#${pr.number} by ${pr.by}` })) });
     const pr = list.find(x => String(x.number) === num);
     if (!pr) return;
     try {
       const { next, now } = await maplib.reviewMaps(app.admin.key, pr);
+      if (pr.file.startsWith('zones/')) { // an exclusion zone: shown over the sheet, to merge or reject as it is
+        const z = maplib.parseZone(next);
+        app.review = { pr, zone: true, prev: app.doc.regionMap, prevZone: app.zone, side: 'new' };
+        app.zone = { league: z.league, file: maplib.carFile(pr.file).split('/').pop(), path: zonePath(z.zones), zones: z.zones, on: true, for: zoneCar() };
+        actions.redraw();
+        return;
+      }
       const prev = app.doc.regionMap;
       const map = await actions.loadMapText(next);
       if (!map) return;
@@ -1550,7 +1577,7 @@ const actions = {
   async reviewApprove() {
     const r = app.review;
     if (!r || r.busy) return; // a second click while GitHub is still merging
-    if (r.side === 'new') r.next = app.doc.regionMap;
+    if (r.side === 'new' && !r.zone) r.next = app.doc.regionMap;
     const now = JSON.stringify(r.next);
     r.busy = 'merge'; ui.refresh(); // the button says Merging… until GitHub answers
     try {
@@ -1577,6 +1604,7 @@ const actions = {
     if (!r) return;
     app.review = null;
     app.doc.regionMap = r.prev;
+    if (r.zone) app.zone = r.prevZone;
     app.piece = null;
     await actions.mapChanged();
     ui.refresh();
@@ -3053,4 +3081,16 @@ function zonePath(zones) {
   const path = new Path2D();
   for (const o of zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
   return path;
+}
+// zones as a picture `size` square: pink at 80% (as the broadcasters' own),
+// on nothing or, with the template, over it so you can see where they sit
+async function zonePicture(zones, size, withTemplate) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  if (withTemplate && app.doc.template) try { g.drawImage(await loadImage(app.doc.template.src), 0, 0, size, size); } catch { /* no template picture: the zone alone */ }
+  g.scale(size / SIZE, size / SIZE);
+  g.fillStyle = 'rgba(255, 0, 204, .8)';
+  g.fill(zonePath(zones), 'evenodd');
+  return c;
 }
