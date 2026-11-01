@@ -1505,7 +1505,7 @@ const actions = {
     if (!z || !z.zones) { ui.say('Make an exclusion zone first: right-click a layer > Make exclusion zone', true); return; }
     if (!app.doc.car) { ui.say('Link your paints folder and choose the car first, so the zone gets the car\'s name', true); return; }
     const file = maplib.mapFileName(app.doc.car);
-    const thumb = (await zonePicture(z.zones, 240, true)).toDataURL('image/png');
+    const thumb = (await zonePicture(z.zones, 320, true)).toDataURL('image/png');
     const got = await ui.zoneSubmit({ car: (app.doc.regionMap && app.doc.regionMap.car) || app.doc.car, folder: app.doc.car, league: app.zoneLeague || z.league || '', thumb });
     if (!got) return;
     const league = maplib.leagueName(got.league);
