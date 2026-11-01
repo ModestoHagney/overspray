@@ -183,6 +183,7 @@ export function initUI(app, actions, version) {
     ['Send backward', 'Ctrl+[', 'backward', { off: !hasLayer() }], ['Send to back', 'Ctrl+Shift+[', 'back', { off: !hasLayer() }], 0,
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
+    ...(app.zonesAsk ? [['Make exclusion zone', '', 'makeZone', { off: !hasLayer(), tip: 'Everything this layer covers becomes the exclusion zone for this car' }]] : []),
     ...shapeItems(), 0,
     ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],

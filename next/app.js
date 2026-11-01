@@ -24,7 +24,7 @@ import { hexToRgb } from './picker.js';
 import { initTools, isShape, isBox, moveLayer, setShape, fadeEnds, hasFade, hasAim } from './tools.js';
 import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly, wrapped, bounds as shapeBounds, mapped as shapeMapped } from '../js/shapes.js';
 import { searchIcons, iconShape, svgToShape } from './icons.js';
-import { traceImage, paintColours, specAreas } from '../js/trace.js';
+import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
@@ -80,6 +80,8 @@ export const app = {
   // only when the page is opened with ?admin, so nobody else sees it
   admin: null,
   adminAsk: /[?&]admin\b/.test(location.search),
+  // making exclusion zones: only when the page is opened with ?zones, so nobody makes one by accident
+  zonesAsk: /[?&]zones\b/.test(location.search),
   // a shared map being reviewed: { pr, prev (this livery's own map, put
   // back after), old, next (the maps; old is null for a new car), text, side }
   review: null,
@@ -303,9 +305,9 @@ function draw() {
     ctx.globalAlpha = 1;
   }
   if (app.zone && app.zone.on) { // a league's exclusion zone, see-through so the paint under it shows
-    ctx.fillStyle = 'rgba(255, 40, 200, .45)';
+    ctx.fillStyle = 'rgba(255, 0, 204, .45)'; // the broadcasters' own pink (#ff00cc)
     ctx.fill(app.zone.path, 'evenodd');
-    ctx.strokeStyle = '#ff28c8';
+    ctx.strokeStyle = '#ff00cc';
     ctx.lineWidth = 1.5 / app.view.zoom;
     ctx.stroke(app.zone.path);
   }
@@ -1477,12 +1479,23 @@ const actions = {
         if (!url) return;
       }
       const z = maplib.parseZone(await maplib.fetchMap(url)), file = cars.find(f => f.url === url).name;
-      const path = new Path2D();
-      for (const o of z.zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
-      app.zone = { league, file, path, on: true, for: mine }; // for: the car it was picked for, even when it is another car's
+      app.zone = { league, file, path: zonePath(z.zones), zones: z.zones, on: true, for: mine }; // for: the car it was picked for, even when it is another car's
       ui.say(`Showing ${league}'s exclusion zone for ${file.replace(/\.json$/, '')}`);
       actions.redraw();
     } catch (err) { ui.say('Could not load the exclusion zone: ' + err.message, true); }
+  },
+  // the picked layers, as they are painted, made into this car's exclusion zone (only with ?zones):
+  // everything they cover is in, whatever its colour or how see-through
+  makeZone() {
+    const ls = selectedLayers();
+    if (!ls.length) return;
+    const sheet = paintLayers(withSeams(withMirrors(withTints({ ...app.doc, layers: ls }))).layers, { linearEdges: true });
+    const zones = solidOutlines(sheet.getContext('2d').getImageData(0, 0, SIZE, SIZE).data, SIZE, SIZE);
+    sheet.width = sheet.height = 0; // let its 16 MB go now
+    if (!zones.length) { ui.say('Nothing to make a zone from: the layer is empty', true); return; }
+    app.zone = { league: null, file: zoneCar(), path: zonePath(zones), zones, on: true, for: zoneCar() };
+    ui.say(`Exclusion zone made: ${zones.length} ${zones.length === 1 ? 'area' : 'areas'}. Hide the layer to see it on its own.`);
+    actions.redraw();
   },
 
   // admins: a GitHub key of theirs that can write to the maps repo
@@ -2194,6 +2207,7 @@ const actions = {
       img = await loadImage(src);
     } catch { /* one that cannot be read back (from another site) is kept as it is */ }
     const l = createImageLayer(img, src, name || 'Picture');
+    if (app.zonesAsk && img.width === SIZE && img.height === SIZE) l.scale = 1; // a sheet (someone's exclusion zones): over the whole sheet, to trace or make a zone from
     if (keep && !library.logos.some(x => x.src === src)) {
       library.logos.unshift({ id: 'g' + newId(), name: name || 'Picture', src });
       library.logos.length = Math.min(library.logos.length, 80); // ponytail: the oldest fall off; add folders if 80 is ever tight
@@ -3034,3 +3048,9 @@ if ('serviceWorker' in navigator) {
 
 // the file name the open car's exclusion zone would have
 function zoneCar() { return maplib.mapFileName(app.doc.car, app.doc.regionMap && app.doc.regionMap.car); }
+// zones ([[[x, y], …], …]) as one path, to fill even-odd
+function zonePath(zones) {
+  const path = new Path2D();
+  for (const o of zones) { o.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); }
+  return path;
+}
