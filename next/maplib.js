@@ -7,6 +7,9 @@
 export const REPO = 'ModestoHagney/overspray-maps';
 const API = `https://api.github.com/repos/${REPO}`;
 export const uploadPage = `https://github.com/${REPO}/upload/main/cars`;
+export const zoneUploadPage = (league) => `https://github.com/${REPO}/upload/main/zones/${encodeURIComponent(league)}`;
+// a league's folder name: lowercase letters, digits and -
+export const leagueName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]+/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
 
 // the file a car's map goes in: its iRacing car folder, or failing that the
 // template's name, made safe for a file name
@@ -94,7 +97,7 @@ export async function openReviews(key) {
   const out = [];
   for (const pr of prs) {
     const files = (await gh(`/pulls/${pr.number}/files`, key)) || [];
-    const f = files.find(x => /^cars\/[^/]+\.json$/.test(x.filename) && x.status !== 'removed');
+    const f = files.find(x => /^(cars\/[^/]+|zones\/[^/]+\/[^/]+)\.json$/.test(x.filename) && x.status !== 'removed');
     // raw_url goes by way of github.com, which a page can't read from: the
     // file straight from raw.githubusercontent.com, at the pull request's head
     if (f && pr.head.repo) out.push({ number: pr.number, title: pr.title, by: pr.user.login, file: f.filename, url: `https://raw.githubusercontent.com/${pr.head.repo.full_name}/${pr.head.sha}/${f.filename}` });
