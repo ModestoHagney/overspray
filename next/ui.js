@@ -208,7 +208,7 @@ export function initUI(app, actions, version) {
       ['Map on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }],
       ['Panel colours on car', '1', 'carPart:carColours', { tick: actions.carOn('carColours'), needs: 1, tip: 'Paints each panel\'s colour and name onto the car, so you can see which panel is which in the sim. Switch off before your real save' }],
       ['Linked edges on car', '2', 'carPart:carLinks', { tick: actions.carOn('carLinks'), needs: 1, tip: 'Paints the linked edges onto the car, so you can check they meet in the sim. Switch off before your real save' }],
-      ['Centrelines on car', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. Switch off before your real save' }],
+      ['Centrelines on car', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. Switch off before your real save' }], 0,
       ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
       ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. Switch it off before your real save' }],
