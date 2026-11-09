@@ -807,16 +807,21 @@ const lowerBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { cons
 
 // Where mesh lines meet a panel's outline, as distances round it, in order:
 // walking 4 px inside the outline, each short run of line crossed (a line
-// running along the edge, a long run, is not a crossing).
+// running along the edge, a long run, is not a crossing). Crossings under
+// 10 px apart count once: a doubled or frayed mesh line is still one line.
 // isLine(x, y): whether the template has a line at that pixel.
 export function meshTicks(region, isLine) {
   const pts = regionOutline(region), cum = arcs(pts), L = cum[pts.length], turn = turnOf(pts), out = [];
-  let run = 0, s0 = 0;
+  let run = 0, s0 = 0, prev = -1e9;
   for (let s = 0; s < L; s++) {
     const q = arcAt(pts, cum, s), a = pts[q.i], b = pts[(q.i + 1) % pts.length], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const x = Math.round(q.x - (b.y - a.y) / l * turn * 4), y = Math.round(q.y + (b.x - a.x) / l * turn * 4);
     if (isLine(x, y)) { if (!run) s0 = s; run++; }
-    else if (run) { if (run <= 5) out.push(s0 + run / 2); run = 0; }
+    else if (run) {
+      const t = s0 + run / 2;
+      if (run <= 5) { if (t - prev >= 10) out.push(t); prev = t; }
+      run = 0;
+    }
   }
   return out;
 }
