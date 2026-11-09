@@ -325,6 +325,7 @@ export function initMap(app, env) {
       return;
     }
     const n = ends.length, hit = linkSnap(p);
+    if (!hit && !n && app.linkOpen) { env.linkClose(); return; } // a click away from the edges closes the open suggestion
     if (!hit) { env.say(n % 2 ? 'Click the other end on the same panel\'s edge' : 'Click closer to a panel\'s edge'); return; }
     if (n % 2 && Math.hypot(hit.x - ends[n - 1].x, hit.y - ends[n - 1].y) < 2) { env.say('The two ends need to be apart'); return; }
     ends.push(hit);
@@ -504,7 +505,7 @@ export function initMap(app, env) {
     if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;
     if (app.tool === 'mpair') return (pairFirst ? `Now click the pair of ${nameOf(pairFirst)}` : 'Click a panel, then its pair on the other side of the car') + (!pairFirst && sel() && sel().mirror ? ' · F tries the next flip' : '') + takeBack;
     if (app.tool === 'mplace') return placing ? `Now drag the same line, front to back, where ${nameOf(placing.region)} sits on the car: over the panel it lies beside · Delete takes it back` : 'Drag a line along a loose piece (a wing, say), front to back. Placing it again moves it';
-    if (app.tool === 'mlink' && app.linkOpen && !ends.length) return 'Add link or Skip in the list · Esc closes the row · or click an edge on the sheet to link it by hand';
+    if (app.tool === 'mlink' && app.linkOpen && !ends.length) return 'Add link or Skip in the list · Esc or a click away closes the row · or click an edge on the sheet to link it by hand';
     if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click one end of an edge that meets another panel · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · Alt+click removes a link', 'Click the other end, on the same panel', 'Now the spot on the other panel that meets end 1', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
     return sel() ? 'Name it, pair it or set its centreline on the right' : 'Click a panel';
   };
