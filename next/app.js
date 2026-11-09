@@ -1867,6 +1867,7 @@ const actions = {
   ownShapes: () => library.shapes,
   setBandWidth(n) { app.bandWidth = Math.max(2, Math.min(800, Math.round(n) || 60)); requestDraw(); },
   redraw() { requestDraw(); ui.refresh(); },
+  saveView() { saveView(); }, // a view choice kept now, not only when the tab closes
   hint: () => (app.mode === 'map' ? (mapTools ? mapTools.hint() : '') : tools ? tools.hint() : ''),
 
   // ---- layers ----

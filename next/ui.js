@@ -1268,7 +1268,7 @@ export function initUI(app, actions, version) {
   // ---------- clicks ----------
   const run = (act) => {
     if (!act) return;
-    if (act.startsWith('show:')) { const k = act.slice(5); app.show[k] = !app.show[k]; actions.redraw(); return; } // a view choice: nothing in the livery changes
+    if (act.startsWith('show:')) { const k = act.slice(5); app.show[k] = !app.show[k]; actions.redraw(); actions.saveView(); return; } // a view choice: nothing in the livery changes
     if (act.startsWith('theme:')) return actions.setTheme(act.slice(6));
     if (act === 'shortcuts') return shortcuts();
     if (act === 'about') return about();
@@ -1331,7 +1331,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.p) {
       const p = t.closest('.panel'), key = p.dataset.panel;
       if (t.dataset.p === 'fold') p.querySelector('.body').hidden = !p.querySelector('.body').hidden;
-      if (t.dataset.p === 'close') app.show[key] = false;
+      if (t.dataset.p === 'close') { app.show[key] = false; actions.saveView(); } // kept straight away, so a hidden Getting started stays hidden
       if (t.dataset.p === 'float') setFloat(key, !p.classList.contains('float'));
       refresh();
     }
