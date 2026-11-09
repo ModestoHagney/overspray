@@ -5,12 +5,13 @@
 // corrected.
 
 import { SIZE, createImageLayer, loadImage } from '../js/engine.js';
-import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, suggestPairs, meshTicks, linkCandidates, suggestLinks, MIRROR_KINDS } from '../js/regions.js';
+import { regionOutline, regionById, centerLine, snapToOutline, slideAlong, edgeSpan, labelPoint, linkPoints, linkLength, linkDir, nearestIsStretch, matchPoint, twinLink, twinOf, syncTwin, addTwins, setMirror, suggestPairs, edgeSide, edgeLink, swapLinkEnds, MIRROR_KINDS } from '../js/regions.js';
 import { pieceAt } from '../js/mirror.js';
 import { hexToRgb } from './picker.js';
 
 export const GUIDE = 'Panel guide'; // the layer that puts the panel colours on the car
 export const pieces = (map) => (map ? map.regions.filter(r => !r.kind) : []);
+const EDGE_REACH = 20; // Link edges: how near an edge the pointer must be to pick it, in screen px
 // golden-angle steps keep neighbours in the list far apart in colour
 export const hue = (i, alpha = 1) => `hsl(${(i * 137.5) % 360} 62% ${i % 2 ? 64 : 50}% / ${alpha})`;
 
@@ -68,46 +69,6 @@ export function pairList(m) {
   if (s !== pairCache.s) pairCache = { s, list: suggestPairs(m) };
   return pairCache.list;
 }
-// Suggested links (Link edges): edges whose mesh lines meet them at the same
-// spacing (see suggestLinks). Finding the candidates reads the template's
-// picture once (16 MB while it is read, let go after) and takes about a second
-// on a big map, so it is done again only when the panels or the template
-// change; what is linked or turned down since only re-picks from them.
-let linkCache = { s: null, src: null, cands: null, busy: null };
-const linkShape = (m) => JSON.stringify(m.regions.map(r => [r.id, r.mirror, r.points && r.points.length, r.x, r.y, r.w, r.h]));
-// → the suggestions, or null while they are being found (or with no template to find them from)
-export function linkList(doc, skip) {
-  const m = doc.regionMap, t = doc.template;
-  if (!m || !t || linkCache.src !== t.src || linkCache.s !== linkShape(m)) return null;
-  return suggestLinks(m, linkCache.cands, skip);
-}
-// finds them if they need finding; `done` is called once they are ready
-export function findLinks(doc, done) {
-  const m = doc.regionMap, t = doc.template;
-  if (!m || !t || !t.src) return;
-  const s = linkShape(m), src = t.src;
-  if (linkCache.src === src && linkCache.s === s) return;
-  if (linkCache.busy === s + src.length) return;
-  linkCache.busy = s + src.length;
-  loadImage(src).then((img) => new Promise((ok) => setTimeout(() => ok(img), 30))).then((img) => { // a frame for "Finding…" to show
-    const w = img.width, h = img.height, c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(img, 0, 0);
-    const px = g.getImageData(0, 0, w, h).data, k = w / SIZE; // the template may not be full size
-    // a line, as the template lines are drawn: far enough from white
-    const isLine = (x, y) => {
-      x = Math.round(x * k); y = Math.round(y * k);
-      if (x < 0 || y < 0 || x >= w || y >= h) return false;
-      const o = (y * w + x) * 4;
-      return (255 - Math.min(px[o], px[o + 1], px[o + 2])) * (px[o + 3] / 255) >= 40;
-    };
-    const ticks = new Map(pieces(m).map(r => [r.id, meshTicks(r, isLine)]));
-    linkCache = { s, src, cands: linkCandidates(m, ticks), busy: null };
-    done();
-  }, () => { linkCache.busy = null; });
-}
-
 // While the pairing list is open the sheet is grey, and the panels being
 // checked are pink (the first) and blue (the second), on the car too, so
 // even a piece too small for its name shows which is which
@@ -209,10 +170,17 @@ export function initMap(app, env) {
   const { screenToDoc, docToScreen, requestDraw } = env;
   let pending = null;   // centreline: the first corner clicked, { region, x, y }
   let snap = null;      // centreline and link: where a click would land right now
-  // Link edges: which edges meet on the car. Four clicks make one: the two
-  // ends of the shared stretch on one panel, then the two spots they meet on
-  // the other, in the same order. Links live in the map (see regions.js).
-  let ends = [];        // the ends clicked so far for the link being made: { region, x, y }
+  // Link edges: which edges meet on the car. Two clicks make one: an edge
+  // (the whole of it, corner to corner, lit up under the pointer), then the
+  // edge it meets on the other panel; see edgeLink in regions.js for which
+  // stretch and which ends that gives. With Ctrl held the ends are placed one
+  // click at a time instead: the two ends of the shared stretch on one panel,
+  // then the two spots they meet on the other, in the same order. The two
+  // ways mix: an edge for one side, two ends for the other. Links live in the map.
+  let ends = [];        // the ends set so far for the link being made: { region, x, y }
+  let first = null;     // the first side, when it was picked as an edge: { click, side }
+  let hover = null;     // what a click would pick right now, as a link with one side or both: { a, b? }
+  let handle = null;    // the end 1 of a link under the pointer: a click swaps that link's ends
   let seam = null;      // near a linked edge: that spot and the one it meets, { at, partner }
   let slide = null;     // a link's end being slid along its edge: { region, ends, start, moved }
   let picked = null;    // the link end last grabbed, for the arrow keys to nudge: { region, ends }
@@ -250,6 +218,13 @@ export function initMap(app, env) {
       for (const end of [sd.from, sd.to]) if (!skip.includes(end) && Math.hypot(end.x - hit.x, end.y - hit.y) <= 10 / app.view.zoom) return { region: hit.region, x: end.x, y: end.y };
     }
     return hit;
+  }
+  // the link a click on this edge spot would start (one side) or make (both), for showing it first
+  function edgeHover(hit) {
+    if (!hit) return null;
+    if (ends.length) return edgeLink(map(), sideA(), hit);
+    const side = edgeSide(map(), hit);
+    return side && { a: side };
   }
   // The link end under the pointer, with every other end at that same spot on
   // the same panel: where two links butt up on one edge they move together.
@@ -316,7 +291,7 @@ export function initMap(app, env) {
     picked = null;
     return twin;
   }
-  function linkClick(p, remove) {
+  function linkClick(p, remove, one) {
     const m = map();
     if (remove) {
       const hit = matchPoint(m, p.x, p.y, 12 / app.view.zoom);
@@ -326,19 +301,63 @@ export function initMap(app, env) {
       env.mapChanged(twin ? 'Link removed, and its twin on the other side' : 'Link removed');
       return;
     }
-    const n = ends.length, hit = linkSnap(p);
-    if (!hit && !n && app.linkOpen) { env.linkClose(); return; } // a click away from the edges closes the open suggestion
+    const n = ends.length;
+    if (!one) return edgeClick(edgeSnap(p, null, EDGE_REACH / app.view.zoom, true));
+    const hit = linkSnap(p);
     if (!hit) { env.say(n % 2 ? 'Click the other end on the same panel\'s edge' : 'Click closer to a panel\'s edge'); return; }
     if (n % 2 && Math.hypot(hit.x - ends[n - 1].x, hit.y - ends[n - 1].y) < 2) { env.say('The two ends need to be apart'); return; }
+    if (!n) first = null;
     ends.push(hit);
-    if (ends.length < 4) { requestDraw(); env.refreshChrome(); return; }
+    if (ends.length < 4) { hover = null; requestDraw(); env.refreshChrome(); return; }
     const [a1, a2, b1, b2] = ends, pt = (c) => ({ x: Math.round(c.x * 10) / 10, y: Math.round(c.y * 10) / 10 });
-    const link = { a: { region: a1.region, from: pt(a1), to: pt(a2) }, b: { region: b1.region, from: pt(b1), to: pt(b2) } };
+    addLink({ a: first ? first.side : { region: a1.region, from: pt(a1), to: pt(a2) }, b: { region: b1.region, from: pt(b1), to: pt(b2) } });
+  }
+  // a click on an edge: the first side of a link, or the side it meets
+  function edgeClick(hit) {
+    const m = map();
+    if (!hit) { env.say('Click closer to a panel\'s edge'); return; }
+    if (!ends.length) {
+      const side = edgeSide(m, hit);
+      if (!side) { env.say('No corners on this panel to find an edge by. Ctrl+click places the ends one at a time'); return; }
+      first = { click: hit, side };
+      ends = [{ region: hit.region, ...side.from }, { region: hit.region, ...side.to }];
+      hover = null;
+      requestDraw(); env.refreshChrome();
+      return;
+    }
+    const link = edgeLink(m, sideA(), hit);
+    if (!link) { env.say(regionById(m, hit.region) && !edgeSide(m, hit) ? 'No corners on this panel to find an edge by. Ctrl+click places the ends one at a time' : 'Click the edge it meets: another edge, not the same one'); return; }
+    addLink(link);
+  }
+  // the side already set, as edgeLink takes it: the edge clicked, or the two ends placed by hand
+  const sideA = () => (first ? first.click : { region: ends[0].region, from: ends[0], to: ends[1] });
+  function addLink(link) {
+    const m = map();
     (m.links || (m.links = [])).push(link);
     const twin = twinLink(m, link); // the matching edges on the other side of the car get linked too
     if (twin) m.links.push(twin);
-    ends = []; snap = null;
-    env.mapChanged(`Linked ${nameOf(a1.region)} and ${nameOf(b1.region)}` + (twin ? `, and ${nameOf(twin.a.region)} and ${nameOf(twin.b.region)}` : ''));
+    ends = []; snap = first = hover = null;
+    env.mapChanged(`Linked ${nameOf(link.a.region)} and ${nameOf(link.b.region)}` + (twin ? `, and ${nameOf(twin.a.region)} and ${nameOf(twin.b.region)}` : ''));
+  }
+  // The link whose end 1 is under the pointer, newest first: { link, at }
+  function endOneAt(s) {
+    const links = map().links || [];
+    for (let i = links.length - 1; i >= 0; i--) for (const sd of [links[i].a, links[i].b]) {
+      const q = docToScreen(sd.from.x, sd.from.y);
+      if (Math.hypot(q.x - s.x, q.y - s.y) <= 9) return { link: links[i], at: sd.from };
+    }
+    return null;
+  }
+  // a click on a link's end 1: made the wrong way round, its ends swap over (its twin's too)
+  function swapAt(s) {
+    const m = map(), hit = endOneAt(s);
+    if (!hit) return false;
+    const twin = twinOf(m, hit.link);
+    swapLinkEnds(m, hit.link);
+    if (twin) syncTwin(m, hit.link, twin);
+    seam = handle = picked = null;
+    env.mapChanged(`Ends swapped on the link between ${nameOf(hit.link.a.region)} and ${nameOf(hit.link.b.region)}` + (twin ? ', and on its twin' : ''));
+    return true;
   }
 
   const copied = (added) => (added.length ? `, and ${added.length} link${added.length > 1 ? 's' : ''} copied to the other side` : '');
@@ -381,11 +400,12 @@ export function initMap(app, env) {
     }
     if (app.tool === 'mlink') {
       // a press on a link's end: a drag slides it along the edge, a plain click still counts as a click there
+      const one = e.ctrlKey || e.metaKey || ends.length % 2 === 1; // one end at a time: Ctrl held, or a stretch half placed
       const grab = !e.altKey && !ends.length ? linkEndAt(s) : null;
       if (grab) grab.pairs = twinsOf(grab.ends);
       if (grab && e.shiftKey) { picked = grab; requestDraw(); env.refreshChrome(); return; } // fine-tune it with the arrow keys
-      if (grab) { slide = { ...grab, start: s, moved: false }; picked = grab; }
-      else linkClick(p, e.altKey);
+      if (grab) { slide = { ...grab, start: s, moved: false, one }; picked = grab; }
+      else linkClick(p, e.altKey, one);
       return;
     }
     if (app.tool === 'mcentre') {
@@ -448,7 +468,12 @@ export function initMap(app, env) {
         requestDraw();
         return;
       }
-      snap = linkSnap(p);
+      // what a click here would do: place one end, swap a link's ends, or pick the edge lit up
+      const one = e.ctrlKey || e.metaKey || ends.length % 2 === 1;
+      snap = one ? linkSnap(p) : null;
+      const end1 = !one && !ends.length && !e.altKey ? endOneAt(s) : null;
+      handle = end1 && end1.at;
+      hover = one || handle || e.altKey ? null : edgeHover(edgeSnap(p, null, EDGE_REACH / app.view.zoom, true));
       const m = matchPoint(map(), p.x, p.y, 10 / app.view.zoom); // where this spot lands on the other panel
       seam = m ? { at: m.at, partner: m.partner } : null;
       requestDraw();
@@ -465,7 +490,7 @@ export function initMap(app, env) {
     const d = slide;
     slide = null;
     if (d.moved) { syncTwins(d.pairs); env.mapChanged(); env.refreshChrome(); }
-    else { picked = null; linkClick(screenToDoc(d.start.x, d.start.y), false); }
+    else { picked = null; if (d.one || !swapAt(d.start)) linkClick(screenToDoc(d.start.x, d.start.y), false, d.one); }
   }
 
   function key(e) {
@@ -482,22 +507,21 @@ export function initMap(app, env) {
       return true;
     }
     if (app.tool === 'mlink' && back) { // takes back the last click, or the last link made
-      if (ends.length) { ends.pop(); requestDraw(); env.refreshChrome(); }
+      if (ends.length) { if (first && ends.length === 2) ends = []; else ends.pop(); if (ends.length < 2) first = null; hover = null; requestDraw(); env.refreshChrome(); }
       else if (map() && (map().links || []).length) { const m = map(), twin = dropLink(m, m.links[m.links.length - 1]); seam = null; env.mapChanged(twin ? 'Last link removed, and its twin' : 'Last link removed'); }
       return true;
     }
     if (e.key !== 'Escape') return false;
     if (app.tool === 'mpair' && app.pairOpen) env.pairClose();
-    else if (app.tool === 'mlink' && app.linkOpen && !ends.length && !picked) env.linkClose();
     else if (pending) { pending = null; requestDraw(); env.refreshChrome(); }
     else if (pairFirst) { pairFirst = null; env.pickPiece(null); }
     else if (picked && app.tool === 'mlink') { picked = null; requestDraw(); env.refreshChrome(); }
-    else if (ends.length) { ends = []; requestDraw(); env.refreshChrome(); }
+    else if (ends.length) { ends = []; first = hover = null; requestDraw(); env.refreshChrome(); }
     else if (app.tool === 'mcentre' || app.tool === 'mlink' || app.tool === 'mpair' || app.tool === 'mplace') env.setTool('mpick');
     else env.pickPiece(null);
     return true;
   }
-  function cancel() { pending = snap = seam = slide = picked = pairFirst = drag = placing = null; ends = []; undos = []; }
+  function cancel() { pending = snap = seam = slide = picked = pairFirst = drag = placing = first = hover = handle = null; ends = []; undos = []; }
 
   const hint = () => {
     if (app.tool === 'hand') return 'Drag to move the sheet · wheel zooms · H or Esc puts it down';
@@ -507,8 +531,8 @@ export function initMap(app, env) {
     if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;
     if (app.tool === 'mpair') return (pairFirst ? `Now click the pair of ${nameOf(pairFirst)}` : 'Click a panel, then its pair on the other side of the car') + (!pairFirst && sel() && sel().mirror ? ' · F tries the next flip' : '') + takeBack;
     if (app.tool === 'mplace') return placing ? `Now drag the same line, front to back, where ${nameOf(placing.region)} sits on the car: over the panel it lies beside · Delete takes it back` : 'Drag a line along a loose piece (a wing, say), front to back. Placing it again moves it';
-    if (app.tool === 'mlink' && app.linkOpen && !ends.length) return 'Add link or Skip in the list · Esc or a click away closes the row · or click an edge on the sheet to link it by hand';
-    if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click one end of an edge that meets another panel · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · Alt+click removes a link', 'Click the other end, on the same panel', 'Now the spot on the other panel that meets end 1', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
+    if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click an edge near one end, then the edge it meets on the other panel near the end that meets it · Ctrl+click places one end at a time · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · click a link\'s 1 to swap its ends · Alt+click removes a link',
+      'Click the other end, on the same panel', 'Now the edge it meets on the other panel, near the end that meets 1 · Ctrl+click places its two ends instead, the one that meets 1 first', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
     return sel() ? 'Name it, pair it or set its centreline on the right' : 'Click a panel';
   };
 
@@ -578,15 +602,21 @@ export function initMap(app, env) {
         ctx.strokeStyle = '#101114'; ctx.lineWidth = 11.2; ctx.stroke(); // half of each width shows
         ctx.strokeStyle = linkHue(keys[i]); ctx.lineWidth = 6.4; ctx.stroke();
         ctx.restore();
-        dot(pts[0], 5, linkHue(keys[i])); dot(pts[pts.length - 1], 3, linkHue(keys[i]));
+        if (app.tool === 'mlink') { // end 1 says so: 1 meets 1, and a click on it swaps the ends
+          dot(pts[0], 7, linkHue(keys[i]));
+          const a = S(pts[0]);
+          ctx.font = '700 10px "IBM Plex Mono", monospace'; ctx.fillStyle = '#101114'; ctx.fillText('1', a.x, a.y + 0.5);
+        } else dot(pts[0], 5, linkHue(keys[i]));
+        dot(pts[pts.length - 1], 3, linkHue(keys[i]));
       }
     });
     ctx.lineCap = 'butt';
     if (app.tool === 'mlink') {
-      // a suggested link, open in the list or under the pointer there: its two stretches pink and blue, 1 where they start
-      const sug = (app.linkOpen && app.linkOpen.link) || app.linkHover;
+      // the link being made: the edge picked first, and the one a click would pick now, pink and blue, 1 on the ends that meet
+      const sug = hover || (first && { a: first.side });
       if (sug) {
         ['a', 'b'].forEach((side, k) => {
+          if (!sug[side]) return;
           const pts = linkPoints(m, sug, side);
           if (!pts.length) return;
           ctx.beginPath(); pts.forEach((q, j) => { const a = S(q); j ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); });
@@ -603,10 +633,11 @@ export function initMap(app, env) {
         ctx.setLineDash([3, 5]); ctx.strokeStyle = '#101114'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
         for (const q of [a, b]) { ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.strokeStyle = '#101114'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }
       }
+      if (handle) { const a = S(handle); ctx.beginPath(); ctx.arc(a.x, a.y, 11, 0, Math.PI * 2); ctx.strokeStyle = '#101114'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.stroke(); } // a click here swaps this link's ends
       if (picked && !ends.length) { const a = S(picked.ends[0]); ctx.beginPath(); ctx.arc(a.x, a.y, 11, 0, Math.PI * 2); ctx.strokeStyle = '#101114'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = accent; ctx.lineWidth = 2.5; ctx.stroke(); } // the end the arrow keys move
       if (snap) { const a = S(snap); ctx.beginPath(); ctx.arc(a.x, a.y, 8, 0, Math.PI * 2); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke(); }
       ctx.font = '700 11px "IBM Plex Mono", monospace';
-      ends.forEach((c, k) => { dot(c, 8, accent); const a = S(c); ctx.fillStyle = '#ffffff'; ctx.fillText(String(k % 2 + 1), a.x, a.y + 0.5); }); // 1 meets 1, 2 meets 2
+      ends.forEach((c, k) => { if (sug && k < 2) return; dot(c, 8, accent); const a = S(c); ctx.fillStyle = '#ffffff'; ctx.fillText(String(k % 2 + 1), a.x, a.y + 0.5); }); // 1 meets 1, 2 meets 2
     }
     // placed pieces: the line along each, and the line it matches where it sits on the car
     const arrow = (a, b, col) => {

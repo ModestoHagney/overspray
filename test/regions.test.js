@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline, suggestPairs, meshTicks, linkCandidates, suggestLinks } from '../js/regions.js';
+import { REGIONS_FORMAT, MAP_LIMITS, mapFit, createRegionMap, parseRegionMap, regionById, regionAt, uniqueRegionId, detectPieces, piecesRegionMap, simplifyOutline, renameRegion, labelPoint, pointInPolygon, snapToOutline, slideAlong, edgeSpan, matchPoint, linkPoints, linkLength, linkDir, twinLink, twinOf, syncTwin, addTwins, nearestIsStretch, setMirrorKind, seamPieces, centerLine, mirrorAcross, setMirror, trimShape, growOutline, guessMirrorKind, regionOutline, suggestPairs, edgeAt, edgeSide, edgeLink, swapLinkEnds } from '../js/regions.js';
 
 // Two doors, each the other's twin. Fields in `extra` replace the map's own.
 const rawMap = (extra = {}) => ({
@@ -654,51 +654,86 @@ test('panel names are cleaned: lowercase, no spaces or special characters', () =
   assert.equal(map.regions[0].name, 'bonnet_scoop');
 });
 
-// ---------------------------------------------------------------- suggested links
+// ---------------------------------------------------------------- linking by edge
 
-// Two panels apart on the sheet whose mesh lines reach the shared edge at the
-// same uneven spacing: A's bottom edge meets B's top edge, B laid out the
-// other way round. `wB`: B's width (A's for a copy).
-function seamSheet(wB = 400, hB = 150) {
-  const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]; // clockwise on screen
-  const map = parseRegionMap(piecesRegionMap('test car', [rect(0, 0, 400, 200), rect(600, 0, wB, hB)]));
-  const at = [37, 90, 160, 230, 310, 355], atB = at.map(x => 600 + Math.round(x * wB / 400)); // along the seam, from each panel's left end, stretched with it
-  const isLine = (x, y) => (y >= 150 && y <= 200 && x <= 400 && at.includes(x)) || (y >= 0 && y <= 50 && atB.includes(x));
-  const ticks = new Map(map.regions.map(r => [r.id, meshTicks(r, isLine)]));
-  return { map, ticks };
+// Two panels apart on the sheet: A's bottom edge meets B's top edge on the car.
+// Both run clockwise on screen, so A's bottom runs right to left and B's top left to right.
+function edgeSheet(wA = 400, wB = 410) {
+  const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+  return parseRegionMap(piecesRegionMap('test car', [rect(0, 0, wA, 200), rect(1000, 0, wB, 150)]));
 }
-const ends = (s) => s.link.a.region === 'piece_1' ? [s.link.a.from, s.link.a.to, s.link.b.from, s.link.b.to] : [s.link.b.from, s.link.b.to, s.link.a.from, s.link.a.to];
+const A = (x, y) => ({ region: 'piece_1', x, y }), B = (x, y) => ({ region: 'piece_2', x, y });
+const at = (p, x, y) => Math.hypot(p.x - x, p.y - y) < 1;
 
-test('mesh ticks: where mesh lines meet the outline, from just inside it', () => {
-  const { ticks } = seamSheet();
-  // A runs clockwise: 1200 px round to its bottom-right corner, then west along the bottom
-  const want = [37, 90, 160, 230, 310, 355].map(x => 600 + 400 - x).reverse(), got = ticks.get('piece_1');
-  assert.equal(got.length, want.length);
-  got.forEach((t, i) => assert.ok(Math.abs(t - want[i]) <= 1, `${t} vs ${want[i]}`));
+test('the edge under a spot runs corner to corner', () => {
+  const pts = regionOutline(edgeSheet().regions[0]);
+  const e = edgeAt(pts, 300, 196); // just inside the bottom edge, a quarter along it from the right
+  assert.ok(Math.abs(e.start - 600) < 1 && Math.abs(e.len - 400) < 1 && Math.abs(e.at - 0.25) < 0.01, JSON.stringify(e));
+  assert.ok(Math.abs(edgeAt(pts, 10, 3).start) < 1); // the top edge, which starts where the outline does
+  // no corners, no edge
+  const round = Array.from({ length: 72 }, (_, k) => ({ x: 500 + 100 * Math.cos(k * Math.PI / 36), y: 500 + 100 * Math.sin(k * Math.PI / 36) }));
+  assert.equal(edgeAt(round, 600, 500), null);
 });
 
-test('two edges with the same mesh spacing are suggested as a link, ends meeting ends', () => {
-  const { map, ticks } = seamSheet(410);
-  const s = suggestLinks(map, linkCandidates(map, ticks));
-  assert.equal(s.length, 1);
-  const [a0, a1, b0, b1] = ends(s[0]);
-  const near = (p, x, y) => Math.hypot(p.x - x, p.y - y) < 1;
-  // a.from meets b.from: A's bottom-right corner with B's top-right one
-  assert.ok((near(a0, 400, 200) && near(a1, 0, 200) && near(b0, 1010, 0) && near(b1, 600, 0)) || (near(a0, 0, 200) && near(a1, 400, 200) && near(b0, 600, 0) && near(b1, 1010, 0)), JSON.stringify(s[0].link));
-  assert.ok(s[0].fit > 0.8 && !s[0].weak);
-  // the link made from it runs along the whole edge on both panels
-  assert.ok(Math.abs(linkPoints(map, s[0].link, 'a', 0, 1, 1).length - 401) <= 11);
+test('one side from a click: the whole edge, end 1 the end nearer the click', () => {
+  const s = edgeSide(edgeSheet(), A(300, 196));
+  assert.ok(at(s.from, 400, 200) && at(s.to, 0, 200) && s.dir === 1, JSON.stringify(s));
+  const t = edgeSide(edgeSheet(), A(90, 196));
+  assert.ok(at(t.from, 0, 200) && at(t.to, 400, 200) && t.dir === -1, JSON.stringify(t));
 });
 
-test('no suggestion over an edge already linked, or one turned down', () => {
-  const { map, ticks } = seamSheet(410);
-  const cands = linkCandidates(map, ticks), [s] = suggestLinks(map, cands);
-  assert.equal(suggestLinks(map, cands, new Set([s.key])).length, 0);
-  map.links = [s.link];
-  assert.equal(suggestLinks(map, cands).length, 0);
+test('two clicked edges make a link, the ends nearer the clicks meeting', () => {
+  const map = edgeSheet();
+  const l = edgeLink(map, A(350, 196), B(1380, 4)); // both near their right ends
+  assert.ok(at(l.a.from, 400, 200) && at(l.a.to, 0, 200) && at(l.b.from, 1410, 0) && at(l.b.to, 1000, 0), JSON.stringify(l));
+  const m = edgeLink(map, A(350, 196), B(1030, 4)); // the second near its left end: the other way round
+  assert.ok(at(m.a.from, 400, 200) && at(m.b.from, 1000, 0) && at(m.b.to, 1410, 0), JSON.stringify(m));
+  // each side runs along its whole edge
+  assert.ok(Math.abs(linkPoints(map, l, 'a', 0, 1, 1).length - 401) <= 1 && Math.abs(linkPoints(map, l, 'b', 0, 1, 1).length - 411) <= 1);
 });
 
-test('panels that are copies of each other are not suggested as neighbours', () => {
-  const { map, ticks } = seamSheet(400, 200);
-  assert.equal(linkCandidates(map, ticks).length, 0);
+test('clicked near the middle, the panels are taken to lie either side of the join', () => {
+  const l = edgeLink(edgeSheet(), A(190, 196), B(1215, 4));
+  // A's bottom-left corner meets B's top-left one, as when B hangs below A
+  assert.ok(at(l.a.from, 0, 200) && at(l.b.from, 1000, 0) && at(l.b.to, 1410, 0), JSON.stringify(l));
+  const m = edgeLink(edgeSheet(), A(350, 196), B(1215, 4)); // one click near an end is not enough to go on
+  assert.ok(at(m.a.from, 400, 200) && at(m.b.from, 1410, 0), JSON.stringify(m));
+});
+
+test('a much longer edge gives a stretch as long as the other, round the click', () => {
+  const long = edgeSheet(400, 900);
+  const l = edgeLink(long, A(350, 196), B(1450, 4)); // B's top edge is 900: 400 of it, round x 1450
+  assert.ok(at(l.b.from, 1650, 0) && at(l.b.to, 1250, 0), JSON.stringify(l.b));
+  const c = edgeLink(long, A(350, 196), B(1040, 4)); // near B's corner: the stretch starts on the corner
+  assert.ok(at(c.b.from, 1000, 0) && at(c.b.to, 1400, 0), JSON.stringify(c.b));
+  // the long edge clicked first is the one cut down
+  const f = edgeLink(edgeSheet(900, 400), A(450, 196), B(1200, 4));
+  assert.ok([f.a.from.x, f.a.to.x].sort((p, q) => p - q).every((x, k) => Math.abs(x - [250, 650][k]) < 1) && Math.abs(f.b.from.x - f.b.to.x) > 399, JSON.stringify(f));
+});
+
+test('a first side placed by hand is kept, its end 1 meeting the end clicked near', () => {
+  const map = edgeSheet(900, 400), hand = { region: 'piece_1', from: { x: 300, y: 200 }, to: { x: 700, y: 200 } };
+  const l = edgeLink(map, hand, B(1380, 4)); // near B's right end: that end meets end 1
+  assert.deepEqual(l.a, hand);
+  assert.ok(at(l.b.from, 1400, 0) && at(l.b.to, 1000, 0), JSON.stringify(l.b));
+  const g = edgeLink(map, hand, B(1200, 4)); // clicked in the middle: either side of the join, x 300 on A over B's left end
+  assert.ok(at(g.b.from, 1000, 0) && at(g.b.to, 1400, 0), JSON.stringify(g.b));
+});
+
+test('the same edge twice is no link; another edge of the same panel is', () => {
+  const map = edgeSheet();
+  assert.equal(edgeLink(map, A(350, 196), A(100, 196)), null);
+  assert.ok(edgeLink(map, A(350, 196), A(100, 4)));
+});
+
+test('swapping a link\'s ends keeps both stretches and turns one round', () => {
+  const map = edgeSheet(), l = edgeLink(map, A(350, 196), B(1380, 4));
+  const before = linkPoints(map, l, 'b', 0, 1, 10), a = JSON.stringify(l.a);
+  swapLinkEnds(map, l);
+  assert.equal(JSON.stringify(l.a), a);
+  assert.deepEqual(linkPoints(map, l, 'b', 0, 1, 10), before.reverse());
+  // one placed by hand, with no way round written down, too
+  const h = { a: { region: 'piece_1', from: { x: 400, y: 200 }, to: { x: 0, y: 200 } }, b: { region: 'piece_2', from: { x: 1000, y: 0 }, to: { x: 1410, y: 0 } } };
+  swapLinkEnds(map, h);
+  assert.ok(at(h.b.from, 1410, 0) && at(h.b.to, 1000, 0) && Math.abs(linkPoints(map, h, 'b', 0, 1, 1).length - 411) <= 1);
 });

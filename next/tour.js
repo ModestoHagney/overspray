@@ -65,7 +65,7 @@ const TUTORIALS = {
       { at: () => q('label:has(#m-colours)'), start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. Turn on <b>View › Panel colours on car</b> (1) to see the same colours on the car, so you can tell which panel is which.' },
       { at: tool('mpair'), start: toMap, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
       { at: tool('mcentre'), start: toMap, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
-      { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Suggested links show in the list: check each one, then Add link or Skip.' },
+      { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Click an edge, then the edge it meets on the other panel. Drag an end to fine-tune it.' },
       { at: () => q('[data-mode="paint"]'), text: '<b>Paint tab.</b> Now see what the map does.', done: () => app.mode === 'paint' },
       { at: tool('piece'), start: () => { toPaint(); layers = app.doc.layers.length; }, text: '<b>Fill panel (G).</b> Pick it, then click a panel that has a twin, so there is something to mirror.', done: () => app.doc.layers.length > layers },
       { at: () => q('.panel [data-act="mirror"]') || q('[data-panel="props"]'), start: toPaint, text: '<b>Mirrored (Ctrl+M).</b> Press it in Properties. The panel you filled gets painted on its twin too, or across the centreline.' },
