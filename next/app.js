@@ -26,11 +26,11 @@ import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly,
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
-import { initMap, syncGuide, guideLayer, guideParts, pairList, setGuidePink, linkList, findLinks } from './map.js';
+import { initMap, syncGuide, guideLayer, guideParts, pairList, setGuidePink } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { startTour } from './tour.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
-import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, renameRegion, twinLink, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
+import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, renameRegion, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
 
 // what needs the template's panels says so, greyed out, until one is loaded
 const NEEDS_TEMPLATE = 'Open a blank template first';
@@ -71,8 +71,6 @@ export const app = {
   mapShow: { colours: true, links: true, centres: true, carColours: true, carLinks: true, carCentres: true }, // Map mode: what shows on the sheet, and on the car with the guide on
   pairOpen: null,                     // Pair panels: the list's open row, { key, ids (one panel, or the two being checked) }
   pairHover: null,                    // Pair panels: ids of the row under the pointer
-  linkOpen: null,                     // Link edges: the suggested link open in the list, { key, link }
-  linkHover: null,                    // Link edges: the suggested link under the pointer in the list
   font: 'Arial Black',                // what the next new text is set in
   // Finish mode: what the next finish applies to —
   // { kind: 'colour', colour, layerId? } | { kind: 'layer', id } | { kind: 'area', id }
@@ -808,7 +806,6 @@ function keepFadeOut(l) {
 const canChange = () => app.mode !== 'finish' || isArea(actions.selected());
 let spaceHeld = false; // Space is down: a drag moves the sheet
 let handFrom = 'select'; // the tool that was armed when the Hand was taken up
-let linkSkip = new Set(); // Link edges: suggestions turned down this visit
 let pairingOn = false, unpaired = new Set(), pairGuide = null; // unpaired: exact pairs taken apart by hand, not paired again this visit; // pairGuide: was Show on car on before the list put its pink panels on the car
 const toolChanged = () => {
   // the pairing list is open while Pair panels is armed (or the Hand taken up from it)
@@ -816,8 +813,6 @@ const toolChanged = () => {
   if (pairing && !pairingOn) actions.pairStart();
   else if (!pairing && pairingOn) actions.pairEnd();
   pairingOn = pairing;
-  if (app.mode === 'map' && app.tool === 'mlink') findLinks(app.doc, () => ui.refresh()); // the suggestions, found once
-  else app.linkOpen = app.linkHover = null;
   cv.classList.toggle('draw', (app.tool !== 'select' && app.tool !== 'mpick' && app.tool !== 'hand') || app.trimming);
   handCursor();
 };
@@ -1266,37 +1261,6 @@ const actions = {
     setMirror(m, r, id || null);
     const n = id ? addTwins(m).length : 0; // links made before the pairing get their twins now
     actions.mapChanged(id ? `${r.name} paired with ${regionById(m, id).name}${n ? `, and ${n} link${n > 1 ? 's' : ''} copied to the other side` : ''}` : `${r.name} unpaired`);
-  },
-  // ---- suggested links (Link edges): checked one by one ----
-  linkSuggestions() { return linkList(app.doc, linkSkip); },
-  linkHoverSet(key) {
-    const s = key ? (linkList(app.doc, linkSkip) || []).find(x => x.key === key) : null;
-    const link = s ? s.link : null;
-    if (link === app.linkHover || (link && app.linkHover && JSON.stringify(link) === JSON.stringify(app.linkHover))) return;
-    app.linkHover = link; requestDraw();
-  },
-  linkRow(key) {
-    if (app.linkOpen && app.linkOpen.key === key) return actions.linkClose();
-    const s = (linkList(app.doc, linkSkip) || []).find(x => x.key === key);
-    app.linkOpen = s ? { key, link: s.link } : null;
-    requestDraw(); ui.refresh();
-  },
-  linkClose() { app.linkOpen = null; requestDraw(); ui.refresh(); },
-  linkAdd() {
-    const m = app.doc.regionMap, o = app.linkOpen;
-    if (!m || !o) return;
-    const link = JSON.parse(JSON.stringify(o.link));
-    (m.links || (m.links = [])).push(link);
-    const twin = twinLink(m, link); // the matching edges on the other side of the car too
-    if (twin) m.links.push(twin);
-    const name = (id) => (regionById(m, id) || { name: id }).name;
-    app.linkOpen = null;
-    actions.mapChanged(`Linked ${name(link.a.region)} and ${name(link.b.region)}` + (twin ? `, and ${name(twin.a.region)} and ${name(twin.b.region)}` : ''));
-  },
-  linkSkip() {
-    if (!app.linkOpen) return;
-    linkSkip.add(app.linkOpen.key);
-    actions.linkClose();
   },
   // ---- the pairing list (Pair panels): twins suggested, checked one by one ----
   // Opening it pairs the panels whose outlines match exactly; everything else waits to be checked.
@@ -3084,7 +3048,7 @@ async function boot() {
     screenToDoc, docToScreen, requestDraw,
     say: ui.say, refreshChrome: ui.refreshChrome,
     setTool: actions.setTool, pickPiece: actions.pickPiece, mapChanged: actions.mapChanged, mapFlip: actions.mapFlip,
-    pairPick: actions.pairPick, pairClose: actions.pairClose, linkClose: actions.linkClose,
+    pairPick: actions.pairPick, pairClose: actions.pairClose,
   });
   carGrad = initCarGradient(app, {
     screenToDoc, docToScreen, requestDraw, say: ui.say,
