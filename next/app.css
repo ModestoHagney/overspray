@@ -60,7 +60,7 @@ input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); o
 .drop .tick::after { content: "✓"; width: 14px; text-align: right; color: var(--accent); }
 .modes { display: flex; padding: 2px; background: var(--hover); border-radius: 8px; margin-inline: auto; }
 .modes button { padding: 4px 16px; font-weight: 500; color: var(--muted); }
-.modes button[aria-pressed="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 3px var(--shade); }
+.modes button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); box-shadow: 0 1px 3px var(--shade); }
 .right { display: flex; align-items: center; gap: 6px; }
 .icon { width: 30px; height: 30px; display: grid; place-items: center; color: var(--muted); }
 .icon:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
