@@ -221,7 +221,7 @@ export function initUI(app, actions, version) {
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Getting started', '', 'show:start', { tick: app.show.start }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Getting started', '', 'show:start', { tick: app.show.start }], ['Tutorial: getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
@@ -1039,7 +1039,7 @@ export function initUI(app, actions, version) {
   async function carSetup(cur) {
     const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
     const body =
-      `<label title="Your iRacing customer ID: on the iRacing site under Account, and in your paint file names (car_123456.tga)"><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
+      `<label title="Your iRacing customer ID: in iRacing, click your name or helmet in the top right; the copy button is beside your ID. It is also in your paint file names (car_123456.tga)"><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
       `<label><span>Painting a</span><select id="cs-target">${opt('car', 'Car', cur.target === 'car')}${opt('helmet', 'Helmet', cur.target === 'helmet')}${opt('suit', 'Suit', cur.target === 'suit')}</select></label>` +
       `<label class="check" title="Your paint has its own numbers, so iRacing does not stamp its own over them"><input id="cs-num" type="checkbox"${cur.customNumber ? ' checked' : ''}><span>Custom number paint</span></label>` +
       (cur.cars.length ? `<label><span>Car folder</span><select id="cs-car">${opt('', 'Choose…', !cur.cars.includes(cur.car))}` +
