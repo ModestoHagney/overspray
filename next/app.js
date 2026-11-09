@@ -253,8 +253,13 @@ const baseSig = (doc) => `${doc.baseColor}|${doc.baseMaterial || ''}|${JSON.stri
 let seen = null; // { sigs, base } of the last picture made in full
 let kept = null; // { cache, sigs, base }: the parts kept round what is moving
 let accurate = false; // whether `composite` was made the accurate way
+let sansGuide = false; // whether `composite` was made without the guide layer
+// on the Map tab the sheet draws the map itself, so the guide (a picture of it, for the car) stays off the sheet
+const wantSansGuide = () => app.mode === 'map' && !!guideLayer(app.doc);
 function picture(wantAccurate) {
-  const doc = shown();
+  let doc = shown();
+  sansGuide = wantSansGuide();
+  if (sansGuide) { const g = guideLayer(doc); doc = { ...doc, layers: doc.layers.filter(l => l !== g) }; }
   dirty = false;
   accurate = wantAccurate;
   if (wantAccurate) {
@@ -287,7 +292,7 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  if (dirty || !composite) picture(!quick);
+  if (dirty || !composite || sansGuide !== wantSansGuide()) picture(!quick);
 
   ctx.save();
   ctx.scale(app.view.zoom, app.view.zoom);
@@ -607,7 +612,7 @@ async function liveTick(attempt = 0) {
   try {
     // the car gets the accurate picture; if the screen's is that already, it is not made a second time
     if (dirty || !accurate || !composite) { picture(true); requestDraw(); }
-    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate ? composite : null) }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
+    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate && !sansGuide ? composite : null) }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
   } catch (err) { // a drawing error must not leave Live busy for good, skipping every later edit
     res = { ok: false, error: err && err.message };
   }
@@ -1437,7 +1442,7 @@ const actions = {
     if (on && !s.carColours && !s.carLinks && !s.carCentres) s.carColours = s.carLinks = s.carCentres = true;
     await actions.carGuide(on);
   },
-  // one switch under On the car; the guide is on while any of them is
+  // one part of the map on the car (View › … on car, 1 2 3); the guide is on while any of them is
   async toggleCarPart(k) {
     if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
     const s = app.mapShow;
@@ -2881,7 +2886,8 @@ window.addEventListener('keydown', (e) => {
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
   if (mod && k === 's') { e.preventDefault(); app.workshop ? endShape(true) : actions.save(); return; }
-  if (!mod && k === 'c' && !app.workshop) { actions.toggleGuide(); return; } // in every mode: which panel is which, on the sheet and on the car
+  if (!mod && k === 'c' && !app.workshop) { actions.toggleGuide(); return; } // in every mode: the map on the car
+  if (!mod && !app.workshop && ['1', '2', '3'].includes(k)) { actions.toggleCarPart(['carColours', 'carLinks', 'carCentres'][k - 1]); return; } // View › … on car
   if (app.workshop && !mod && (k === 'f' || k === '+' || k === '=' || k === '-' || k === 'g' || k === 't' || k === 'h')) return; // its view is held still, and it has no panels or text
   if (app.mode === 'map') { // the layer keys below belong to Paint
     if (mod) return;

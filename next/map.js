@@ -115,7 +115,7 @@ export const GREY = '#d4d4d8', PAIR_COLOURS = ['#ff2bd6', '#00a3ff'];
 const pairColour = (id, ...lists) => { for (const l of lists) if (l && l.includes(id)) return PAIR_COLOURS[l.indexOf(id)]; return GREY; };
 let pink = null; // ids of the panels the guide on the car shows pink, or null for the usual guide
 export const setGuidePink = (ids) => { pink = ids; };
-// what the guide on the car shows (set from the switches under On the car)
+// what the guide on the car shows (set from View › … on car)
 export const guideParts = { colours: true, links: true, centres: true };
 
 // The panel colours, names, linked edges and centrelines as a full-sheet
