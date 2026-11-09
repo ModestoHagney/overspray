@@ -21,7 +21,7 @@ const TUTORIALS = {
       { at: () => $('btn-live'),
         text: '<b>Live.</b> Press it. It asks for your iRacing customer ID: in iRacing, click your name or helmet in the top right, then the copy button beside your ID. Then pick your paints folder: Documents › iRacing › paints.',
         done: () => app.live && !app.liveBad, skip: () => app.live && !app.liveBad },
-      { at: () => null, text: '<b>Open the car in iRacing.</b> In iRacing, go to My Content › Cars, click this car, then the Car Model tab. It shows the car in 3D with your paint on it. Keep it open.' },
+      { at: () => null, text: '<b>Open the car in iRacing.</b> In iRacing, go to My Content › Cars, find the car your template is for in the list and click it, then click the Car Model tab. It shows the car in 3D with your paint on it. Keep it open.' },
       { at: () => document.querySelector('[data-tool="piece"]'),
         text: '<b>Fill panel (G).</b> Pick it, then click a panel on the sheet.',
         start: () => { layers = app.doc.layers.length; }, done: () => app.doc.layers.length > layers },
