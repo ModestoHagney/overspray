@@ -791,7 +791,7 @@ export function matchPoint(map, x, y, maxDist) {
 //   2. linkCandidates: every pair of stretches whose ticks, length and shape agree (the slow part)
 //   3. suggestLinks: the best of those, each edge used once, leaving out what is linked already
 
-const LINK_SAMPLES = 32, LINK_MIN = 30, LINK_SLACK = 0.1;
+const LINK_SAMPLES = 32, LINK_MIN = 80, LINK_SLACK = 0.1;
 // binary-search version of atArc, for walking long outlines
 function arcAt(pts, cum, s) {
   const L = cum[pts.length];
@@ -821,9 +821,32 @@ export function meshTicks(region, isLine) {
   return out;
 }
 
-// Pairs of stretches that could meet on the car. One side runs corner to
-// corner (up to three edges); the other starts at a corner and runs as far,
-// to a corner when there is one within a tenth of that. Kept only when the
+// The real corners round an outline, as distances round it: where it turns 50
+// degrees or more between 10 px before and 10 px after. A traced curve is
+// lots of short straight bits that each turn a little, so measuring over a
+// stretch leaves its wobbles out; a bend cut into a few bits counts once.
+function realCorners(pts, cum) {
+  const L = cum[pts.length], W = 10, found = [];
+  for (let i = 0; i < pts.length; i++) {
+    const s = cum[i], p = arcAt(pts, cum, s - W), q = pts[i], r = arcAt(pts, cum, s + W);
+    const ux = q.x - p.x, uy = q.y - p.y, vx = r.x - q.x, vy = r.y - q.y, k = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+    const turn = k ? Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / k))) : 0;
+    if (turn >= 50 * Math.PI / 180) found.push({ s, turn });
+  }
+  // a bend cut into a few bits is found at each of them: keep its sharpest
+  const out = [];
+  for (const c of found) {
+    const last = out[out.length - 1];
+    if (last && c.s - last.s < W) { if (c.turn > last.turn) out[out.length - 1] = c; }
+    else out.push(c);
+  }
+  if (out.length > 1 && out[0].s + L - out[out.length - 1].s < W) { if (out[out.length - 1].turn > out[0].turn) out[0] = out[out.length - 1]; out.pop(); }
+  return out.map(c => c.s);
+}
+
+// Pairs of stretches that could meet on the car: corner to corner on both
+// panels (up to two edges on the first, its length give or take a tenth on
+// the second), 80 px or more. Kept only when the
 // two have about as many ticks, at the same spacing, and the same shape once
 // turned and scaled, and when the panels lie on opposite sides of the join.
 // Panels that are copies of each other (left and right, a row of fins) match
@@ -832,12 +855,7 @@ export function meshTicks(region, isLine) {
 export function linkCandidates(map, ticks) {
   const panels = map.regions.filter(r => !r.kind && ticks.has(r.id)).map(r => {
     const pts = regionOutline(r), cum = arcs(pts), L = cum[pts.length], t = ticks.get(r.id);
-    const cs = [], n = pts.length;
-    for (let i = 0; i < n; i++) {
-      const a = pts[(i + n - 1) % n], b = pts[i], c = pts[(i + 1) % n];
-      const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y, k = Math.hypot(ux, uy) * Math.hypot(vx, vy);
-      if (k && Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / k))) >= Math.PI / 4) cs.push(cum[i]);
-    }
+    const cs = realCorners(pts, cum);
     const pre = new Uint16Array(Math.ceil(L) + 2); // ticks before each whole px, for counting them fast
     for (let s = 0, j = 0; s < pre.length; s++) { while (j < t.length && t[j] < s) j++; pre[s] = j; }
     return { r, pts, cum, L, cs, t, pre, turn: turnOf(pts), area: polygonArea(pts) };
@@ -882,7 +900,7 @@ export function linkCandidates(map, ticks) {
   const out = [];
   for (const A of panels) {
     const n = A.cs.length;
-    for (let i = 0; i < n; i++) for (let k = 1; k <= Math.min(3, n); k++) {
+    for (let i = 0; i < n; i++) for (let k = 1; k <= Math.min(2, n); k++) {
       const s0 = A.cs[i], lenA = ((A.cs[(i + k) % n] - s0) % A.L + A.L) % A.L || A.L;
       if (lenA < LINK_MIN || lenA > A.L * 0.75) continue;
       const ta = within(A, s0, lenA, 1);
@@ -894,12 +912,14 @@ export function linkCandidates(map, ticks) {
           if (A.turn * B.turn * dir !== -1) continue; // the two panels must lie either side of the join
           const nb = ticksBefore(B, dir === 1 ? c + lenA - 2 : c - 2) - ticksBefore(B, dir === 1 ? c + 2 : c - lenA + 2);
           if (nb < 2 || Math.abs(nb - ta.length) > 0.25 * Math.max(nb, ta.length) + 2) continue;
-          let lenB = lenA, corner = false;
+          // the far end on a corner too
+          let lenB = 0;
           const want = ((c + dir * lenA) % B.L + B.L) % B.L, j = lowerBound(B.cs, want), m = B.cs.length;
           for (const c2 of [B.cs[(j + m - 1) % m], B.cs[j % m]]) {
             const d = ((dir * (c2 - c)) % B.L + B.L) % B.L;
-            if (Math.abs(d - lenA) <= LINK_SLACK * lenA && (!corner || Math.abs(d - lenA) < Math.abs(lenB - lenA))) { lenB = d; corner = true; }
+            if (Math.abs(d - lenA) <= LINK_SLACK * lenA && (!lenB || Math.abs(d - lenA) < Math.abs(lenB - lenA))) lenB = d;
           }
+          if (!lenB) continue;
           const tb = within(B, c, lenB, dir);
           if (tb.length < 2 || Math.abs(ta.length - tb.length) > 0.25 * Math.max(ta.length, tb.length) + 1) continue;
           if (Math.abs(straightness(B, c, lenB, dir) - sa) > 0.05) continue;
@@ -907,7 +927,8 @@ export function linkCandidates(map, ticks) {
           if (tm < 0.5) continue;
           const miss = shapeMiss(pa, sample(B, c, lenB, dir), lenA);
           if (miss > 0.04) continue;
-          const fit = (1 - miss / 0.04) * (1 - Math.abs(lenB - lenA) / lenA) * (corner ? 1 : 0.9) * tm * Math.min(1, Math.min(ta.length, tb.length) / 6);
+          // a long edge wins over the bits inside it
+          const fit = (1 - miss / 0.04) * (1 - Math.abs(lenB - lenA) / lenA) * tm * Math.min(1, Math.min(ta.length, tb.length) / 6) * (0.6 + 0.4 * Math.min(1, lenA / 300));
           out.push({ a: A.r.id, b: B.r.id, s0, lenA, c, dir, lenB, fit, ticks: Math.min(ta.length, tb.length) });
         }
       }
