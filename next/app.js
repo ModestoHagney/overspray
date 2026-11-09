@@ -1277,11 +1277,6 @@ const actions = {
     requestDraw(); ui.refresh();
   },
   linkClose() { app.linkOpen = null; requestDraw(); ui.refresh(); },
-  // on to the best one left, or the row closes when there is none
-  linkNext() {
-    const s = (linkList(app.doc, linkSkip) || [])[0];
-    app.linkOpen = s ? { key: s.key, link: s.link } : null;
-  },
   linkAdd() {
     const m = app.doc.regionMap, o = app.linkOpen;
     if (!m || !o) return;
@@ -1290,14 +1285,13 @@ const actions = {
     const twin = twinLink(m, link); // the matching edges on the other side of the car too
     if (twin) m.links.push(twin);
     const name = (id) => (regionById(m, id) || { name: id }).name;
-    actions.linkNext();
+    app.linkOpen = null;
     actions.mapChanged(`Linked ${name(link.a.region)} and ${name(link.b.region)}` + (twin ? `, and ${name(twin.a.region)} and ${name(twin.b.region)}` : ''));
   },
   linkSkip() {
     if (!app.linkOpen) return;
     linkSkip.add(app.linkOpen.key);
-    actions.linkNext();
-    requestDraw(); ui.refresh();
+    actions.linkClose();
   },
   // ---- the pairing list (Pair panels): twins suggested, checked one by one ----
   // Opening it pairs the panels whose outlines match exactly; everything else waits to be checked.
