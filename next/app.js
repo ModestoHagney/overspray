@@ -50,7 +50,7 @@ export const app = {
   sels: [],                           // every selected layer's id when there are several (it includes sel)
   // the template's own linework already draws every piece's border, so the
   // computed piece outlines start off here; they are Map mode's to show
-  show: { start: true, layers: true, props: true, outlines: false, lines: true, mesh: true },
+  show: { layers: true, props: true, outlines: false, lines: true, mesh: true },
   custid: '',
   live: false,
   liveBad: false,                     // the last live save failed
