@@ -36,12 +36,13 @@ let stop = null;
 export function startTour(app, name = 'setup') {
   if (stop) stop();
   const steps = TUTORIALS[name](app);
-  const spot = document.createElement('div'), bubble = document.createElement('div');
+  const dim = document.createElement('div'), spot = document.createElement('div'), bubble = document.createElement('div');
+  dim.className = 'tour-dim';
   spot.className = 'tour-spot';
   bubble.className = 'tour-bubble';
   bubble.setAttribute('role', 'dialog');
   bubble.setAttribute('aria-label', 'Tutorial');
-  document.body.append(spot, bubble);
+  document.body.append(dim, spot, bubble);
   let k = -1, at = null, armed = false;
 
   const go = (n) => {
@@ -61,8 +62,11 @@ export function startTour(app, name = 'setup') {
     at = seen(el) ? el : null;
     const r = at ? at.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 2 };
     const pad = at ? 4 : 0;
-    Object.assign(spot.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + 2 * pad + 'px', height: r.height + 2 * pad + 'px' });
-    spot.classList.toggle('none', !at);
+    const x0 = r.left - pad, y0 = r.top - pad, w = r.width + 2 * pad, h = r.height + 2 * pad, c = Math.min(8, w / 2, h / 2);
+    Object.assign(spot.style, { left: x0 + 'px', top: y0 + 'px', width: w + 'px', height: h + 'px' });
+    spot.hidden = !at;
+    // the whole page dark, with a rounded hole where the step's element is
+    dim.style.clipPath = at ? `path(evenodd, 'M0 0H${innerWidth}V${innerHeight}H0Z M${x0 + c} ${y0}H${x0 + w - c}A${c} ${c} 0 0 1 ${x0 + w} ${y0 + c}V${y0 + h - c}A${c} ${c} 0 0 1 ${x0 + w - c} ${y0 + h}H${x0 + c}A${c} ${c} 0 0 1 ${x0} ${y0 + h - c}V${y0 + c}A${c} ${c} 0 0 1 ${x0 + c} ${y0}Z')` : '';
     const bw = bubble.offsetWidth, bh = bubble.offsetHeight, gap = 12;
     let x, y;
     if (!at) { x = (innerWidth - bw) / 2; y = (innerHeight - bh) / 2; }
@@ -87,6 +91,6 @@ export function startTour(app, name = 'setup') {
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { e.stopPropagation(); stop(); } };
   bubble.addEventListener('click', onClick);
   addEventListener('keydown', onKey, true);
-  stop = () => { clearInterval(tick); removeEventListener('keydown', onKey, true); spot.remove(); bubble.remove(); stop = null; };
+  stop = () => { clearInterval(tick); removeEventListener('keydown', onKey, true); dim.remove(); spot.remove(); bubble.remove(); stop = null; };
   go(0);
 }

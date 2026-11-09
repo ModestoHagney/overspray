@@ -99,8 +99,8 @@ input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); o
 /* tutorials: orange, so they never look like the app's own blue buttons */
 .btn.tour { background: #f28c28; border-color: #f28c28; color: #1d1206; font-weight: 500; pointer-events: auto; }
 .btn.tour:hover:not(:disabled) { background: #f28c28; filter: brightness(1.08); }
-.tour-spot { position: fixed; z-index: 50; border-radius: 8px; box-shadow: 0 0 0 2px #f28c28, 0 0 0 100vmax rgba(0, 0, 0, .6); pointer-events: none; transition: all .15s; }
-.tour-spot.none { box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); }
+.tour-dim { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .6); pointer-events: none; }
+.tour-spot { position: fixed; z-index: 50; border: 2px solid #f28c28; border-radius: 8px; pointer-events: none; }
 .tour-bubble { position: fixed; z-index: 51; width: 320px; max-width: calc(100vw - 16px); padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); box-shadow: 0 4px 16px var(--shade); font-size: 13px; }
 .tour-bubble p { margin: 0 0 10px; line-height: 1.45; }
 .tour-bubble a { color: var(--accent); }
