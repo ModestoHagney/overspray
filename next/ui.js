@@ -212,7 +212,7 @@ export function initUI(app, actions, version) {
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Tutorial: getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Tutorial: painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Tutorial: maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Tutorial: Getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Tutorial: Painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Tutorial: Maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }], 0, ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
