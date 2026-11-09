@@ -948,7 +948,7 @@ export function linkCandidates(map, ticks) {
 // copies of each other, not neighbours, and are dropped. weak: a loose fit,
 // or another candidate for the same edge fits nearly as well (left or right?).
 // → [{ key, link, fit, weak }]
-export function suggestLinks(map, cands, skip = new Set(), minFit = 0.45) {
+export function suggestLinks(map, cands, skip = new Set(), minFit = 0.3) {
   const geo = new Map();
   const P = (id) => {
     if (!geo.has(id)) { const r = regionById(map, id), pts = r && regionOutline(r), cum = pts && arcs(pts); geo.set(id, r ? { pts, cum, L: cum[pts.length] } : null); }
