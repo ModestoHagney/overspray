@@ -205,7 +205,7 @@ export function initUI(app, actions, version) {
     ],
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
-      ['Panel colours on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
+      ['Map on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }], ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
       ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. Switch it off before your real save' }],
       ...(app.zonesAsk ? [['Submit exclusion zone…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []), 0,
@@ -655,8 +655,14 @@ export function initUI(app, actions, version) {
         })() +
         `<div class="acts"><button class="btn" data-act="centreStart" title="Two matching corners, one each side"${r.center ? ' disabled' : ''}>Set centreline</button><button class="btn" data-act="centreRemove"${r.center ? '' : ' disabled'}>Remove centreline</button></div>`;
     return top + '<hr class="rule">' +
-      `<label class="switch" title="Each panel in its own colour on the sheet, so you can tell them apart">Panel colours<input id="m-colours" type="checkbox"${app.mapShow.colours ? ' checked' : ''}></label>` +
-      `<label class="switch" title="Paints the panel colours and names onto the car, so you can see which panel is which in the sim">Show on car<input id="m-guide" type="checkbox"${actions.guideOn() ? ' checked' : ''}></label>` +
+      '<div class="sub">On the sheet</div>' +
+      `<label class="switch" title="Each panel in its own colour, with its name, so you can tell them apart">Panel colours<input id="m-colours" type="checkbox"${app.mapShow.colours ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Linked edges in their colours (always shown while Link edges is in use)">Linked edges<input id="m-links" type="checkbox"${app.mapShow.links ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Centrelines, dashed yellow (always shown while Set centreline is in use)">Centrelines<input id="m-centres" type="checkbox"${app.mapShow.centres ? ' checked' : ''}></label>` +
+      '<div class="sub">On the car in iRacing</div>' +
+      `<label class="switch" title="Paints each panel's colour and name onto the car, so you can see which panel is which in the sim. Switch off before your real save">Panel colours<input id="m-guide" type="checkbox"${actions.carOn('carColours') ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Paints the linked edges onto the car, so you can check they meet in the sim. Switch off before your real save">Linked edges<input id="m-guide-links" type="checkbox"${actions.carOn('carLinks') ? ' checked' : ''}></label>` +
+      `<label class="switch" title="Paints the centrelines onto the car, so you can check them in the sim. Switch off before your real save">Centrelines<input id="m-guide-centres" type="checkbox"${actions.carOn('carCentres') ? ' checked' : ''}></label>` +
       '<div class="acts"><button class="btn" data-act="pickMapFile" title="A map saved as a file">Load map…</button><button class="btn" data-act="saveMap" title="Download this map as a file">Save map…</button></div>' +
       '<hr class="rule">' + libraryHtml();
   }
@@ -952,8 +958,12 @@ export function initUI(app, actions, version) {
     if (id === 'm-name') return actions.mapRename(e.target.value.trim());
     if (id === 'm-pair') return actions.mapPair(e.target.value);
     if (id === 'm-flip') return actions.mapFlip(e.target.value);
-    if (id === 'm-colours') return actions.toggleMapColours();
-    if (id === 'm-guide') return actions.toggleGuide();
+    if (id === 'm-colours') return actions.toggleMapShow('colours');
+    if (id === 'm-links') return actions.toggleMapShow('links');
+    if (id === 'm-centres') return actions.toggleMapShow('centres');
+    if (id === 'm-guide') return actions.toggleCarPart('carColours');
+    if (id === 'm-guide-links') return actions.toggleCarPart('carLinks');
+    if (id === 'm-guide-centres') return actions.toggleCarPart('carCentres');
     const layer = app.doc.layers.find((x) => x.id === app.sel);
     if (e.target.id === 'f-name' && layer && e.target.value.trim()) { layer.name = e.target.value.trim(); actions.change(); }
   });

@@ -62,7 +62,7 @@ const TUTORIALS = {
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => q('[data-mode="map"]'), text: '<b>Map tab.</b> Where you tell Overspray how the panels fit together on the car.', done: () => app.mode === 'map' },
       { at: () => q('[data-act="browseMaps"]'), start: toMap, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
-      { at: () => q('label:has(#m-colours)'), start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. Turn on <b>Show on car</b> under it to see the same colours on the car in iRacing, so you can tell which panel is which.' },
+      { at: () => q('label:has(#m-colours)'), start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. Turn on <b>Panel colours</b> under <b>On the car in iRacing</b> to see the same colours on the car, so you can tell which panel is which.' },
       { at: tool('mpair'), start: toMap, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
       { at: tool('mcentre'), start: toMap, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
       { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Suggested links show in the list: check each one, then Add link or Skip.' },

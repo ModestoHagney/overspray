@@ -115,9 +115,11 @@ export const GREY = '#d4d4d8', PAIR_COLOURS = ['#ff2bd6', '#00a3ff'];
 const pairColour = (id, ...lists) => { for (const l of lists) if (l && l.includes(id)) return PAIR_COLOURS[l.indexOf(id)]; return GREY; };
 let pink = null; // ids of the panels the guide on the car shows pink, or null for the usual guide
 export const setGuidePink = (ids) => { pink = ids; };
+// what the guide on the car shows (set from the switches under On the car)
+export const guideParts = { colours: true, links: true, centres: true };
 
 // The panel colours, names, linked edges and centrelines as a full-sheet
-// picture: what the "Show on car" guide layer is made of.
+// picture: what the guide layer on the car is made of (the parts in guideParts).
 export function guideCanvas(map) {
   const c = document.createElement('canvas');
   c.width = c.height = SIZE;
@@ -125,14 +127,14 @@ export function guideCanvas(map) {
   ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const list = pieces(map);
   const trace = (pts) => { ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); };
-  list.forEach((r, i) => {
+  if (pink || guideParts.colours) list.forEach((r, i) => {
     trace(regionOutline(r));
     ctx.fillStyle = pink ? pairColour(r.id, pink) : hue(i); ctx.fill();
     ctx.strokeStyle = '#101114'; ctx.lineWidth = 3; ctx.stroke();
   });
   if (pink) return c; // just the panels being checked, nothing else to look past
   const keys = linkKeys(map), at = (id) => panelHue(list.findIndex(r => r.id === id));
-  (map.links || []).forEach((link, i) => {
+  if (guideParts.links) (map.links || []).forEach((link, i) => {
     const n = Math.max(3, Math.min(16, Math.round(linkLength(map, link) / 48)));
     const twins = map.links.filter((l, j) => keys[j] === keys[i]);
     const bands = bandsFor(keys[i], twins.flatMap(l => [at(l.a.region), at(l.b.region)]));
@@ -165,7 +167,7 @@ export function guideCanvas(map) {
       ctx.drawImage(sc, x0, y0);
     }
   });
-  for (const r of list) {
+  if (guideParts.centres) for (const r of list) {
     const cl = centerLine(r);
     if (!cl) continue;
     ctx.save();
@@ -175,7 +177,7 @@ export function guideCanvas(map) {
     ctx.setLineDash([28, 20]); ctx.strokeStyle = '#ffe119'; ctx.lineWidth = 8; ctx.stroke();
     ctx.restore();
   }
-  list.forEach((r, i) => {
+  if (guideParts.colours) list.forEach((r, i) => {
     const p = labelOf(r, list.slice(i + 1));
     let size = Math.max(14, Math.min(64, p.room * 0.7));
     ctx.font = `700 ${size}px "IBM Plex Mono", monospace`;
@@ -532,7 +534,7 @@ export function initMap(app, env) {
       ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
       ctx.setLineDash([]);
     }
-    for (const r of list) {
+    if (app.mapShow.centres || app.tool === 'mcentre') for (const r of list) {
       const cl = centerLine(r);
       if (!cl) continue;
       ctx.save();
@@ -566,7 +568,7 @@ export function initMap(app, env) {
     // linked edges: both stretches of a link in one colour, a big dot on the ends that meet each other
     ctx.lineCap = 'round';
     const keys = linkKeys(m);
-    (m.links || []).forEach((link, i) => {
+    if (app.mapShow.links || app.tool === 'mlink') (m.links || []).forEach((link, i) => {
       for (const side of ['a', 'b']) {
         const pts = linkPoints(m, link, side);
         if (!pts.length) continue;
