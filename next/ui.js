@@ -120,7 +120,7 @@ const MAP_TOOLS = [
   ['mlink', 'Link edges: where two panels meet, so paint carries across'],
   ['mplace', 'Place a piece: where a loose part (a wing, say) sits on the car'],
 ];
-const PANELS = ['start', 'layers', 'props'];
+const PANELS = ['layers', 'props'];
 const FINISH_TIPS = { gloss: 'Shiny clear coat, like new paint', satin: 'A soft sheen, between Gloss and Matte', matte: 'Flat, no shine', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', chrome: 'A mirror: it reflects everything' };
 const WEIGHT_NAMES = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi bold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
 // A slider as one bar that fills up: its name inside on the left, its value
@@ -144,15 +144,6 @@ export function initUI(app, actions, version) {
     panels[key] = p;
     $('dock').append(p);
   }
-  // Getting started: the few steps from nothing to the car in iRacing. Shown on
-  // the first visit; Help > Getting started brings it back
-  panels.start.querySelector('h2').textContent = 'Getting started';
-  panels.start.querySelector('.body').innerHTML = '<ol class="steps">' +
-    '<li>Open the car\'s template. <button class="link" data-act="pickTemplate">Open blank template…</button> or <button class="link" data-act="getTemplate">get one</button>. Have a paint already? <button class="link" data-act="pickPaint">Import paint file…</button></li>' +
-    '<li>Pick a colour in Properties, then click panels with Fill panel (G), or draw with Pen, Shape, Text and Library on the left.</li>' +
-    '<li>Spec tab: click a colour and pick Gloss, Matte, Chrome…</li>' +
-    '<li><button class="link" data-act="linkFolder">Link your iRacing paints folder</button>, then turn on Live: every change shows on the car in iRacing.</li>' +
-    '</ol><div class="note">Mirrored paints both sides once the car has a map: Map tab, Browse maps. Hover a button to see what it does; the line at the bottom says how to use the tool you have. F1 lists the keys.</div>';
   // the Layers list is made taller or shorter by its bottom edge
   panels.layers.insertAdjacentHTML('beforeend', '<div class="grip" title="Drag to make the list taller or shorter" aria-hidden="true"></div>');
   panels.layers.lastChild.addEventListener('pointerdown', (e) => {
@@ -221,7 +212,7 @@ export function initUI(app, actions, version) {
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Getting started', '', 'show:start', { tick: app.show.start }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Tutorial: getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
@@ -1039,7 +1030,7 @@ export function initUI(app, actions, version) {
   async function carSetup(cur) {
     const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
     const body =
-      `<label title="Your iRacing customer ID: on the iRacing site under Account, and in your paint file names (car_123456.tga)"><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
+      `<label title="Your iRacing customer ID: in iRacing, click your name or helmet in the top right; the copy button is beside your ID. It is also in your paint file names (car_123456.tga)"><span>Customer number</span><input id="cs-id" type="text" inputmode="numeric" placeholder="e.g. 123456" value="${esc(cur.custid)}"></label>` +
       `<label><span>Painting a</span><select id="cs-target">${opt('car', 'Car', cur.target === 'car')}${opt('helmet', 'Helmet', cur.target === 'helmet')}${opt('suit', 'Suit', cur.target === 'suit')}</select></label>` +
       `<label class="check" title="Your paint has its own numbers, so iRacing does not stamp its own over them"><input id="cs-num" type="checkbox"${cur.customNumber ? ' checked' : ''}><span>Custom number paint</span></label>` +
       (cur.cars.length ? `<label><span>Car folder</span><select id="cs-car">${opt('', 'Choose…', !cur.cars.includes(cur.car))}` +
@@ -1331,7 +1322,7 @@ export function initUI(app, actions, version) {
     if (t.dataset.p) {
       const p = t.closest('.panel'), key = p.dataset.panel;
       if (t.dataset.p === 'fold') p.querySelector('.body').hidden = !p.querySelector('.body').hidden;
-      if (t.dataset.p === 'close') { app.show[key] = false; actions.saveView(); } // kept straight away, so a hidden Getting started stays hidden
+      if (t.dataset.p === 'close') { app.show[key] = false; actions.saveView(); } // kept straight away, so a hidden panel stays hidden
       if (t.dataset.p === 'float') setFloat(key, !p.classList.contains('float'));
       refresh();
     }

@@ -28,6 +28,7 @@ import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
 import { initMap, syncGuide, guideLayer, pairList, setGuidePink, linkList, findLinks } from './map.js';
 import { initCarGradient } from './cargrad.js';
+import { startTour } from './tour.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
 import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, renameRegion, twinLink, setMirror, addTwins, setMirrorKind, MIRROR_NAMES } from '../js/regions.js';
 
@@ -49,7 +50,7 @@ export const app = {
   sels: [],                           // every selected layer's id when there are several (it includes sel)
   // the template's own linework already draws every piece's border, so the
   // computed piece outlines start off here; they are Map mode's to show
-  show: { start: true, layers: true, props: true, outlines: false, lines: true, mesh: true },
+  show: { layers: true, props: true, outlines: false, lines: true, mesh: true },
   custid: '',
   live: false,
   liveBad: false,                     // the last live save failed
@@ -980,6 +981,7 @@ const actions = {
   },
 
   pickTemplate: () => $('file-template').click(),
+  tour: () => startTour(app),
   // where the cars' template files are: Trading Paints lists them all, free, no login
   getTemplate() { const tab = window.open('https://www.tradingpaints.com/cartemplates', '_blank'); if (tab) tab.opener = null; else ui.say('Allow pop-ups for this site, or open tradingpaints.com/cartemplates', true); },
   async loadTemplateFile(file) {
@@ -2951,6 +2953,7 @@ $('file-map').addEventListener('change', (e) => {
 $('btn-empty-template').addEventListener('click', actions.pickTemplate);
 $('btn-empty-paint').addEventListener('click', actions.pickPaint);
 $('btn-empty-livery').addEventListener('click', actions.pickLivery);
+$('btn-tour').addEventListener('click', actions.tour);
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 $('btn-theme').addEventListener('click', () => actions.flipTheme());
