@@ -48,7 +48,7 @@ const TUTORIALS = {
     { at: tool('cargrad'), text: '<b>Car gradient.</b> A fade along the whole car, matching on both sides.' + NEEDS },
     { at: tool('extras'), text: '<b>Car extras.</b> The pit box, colour squares and pitboard. iRacing colours these from small squares on the sheet.' + NEEDS },
     { at: () => $('c-pick'), start: toPaint, text: '<b>Colour.</b> Click the box to pick a colour for what is selected. The dots under it are colours already in this livery: click one to use it again.' },
-    { at: () => q('[data-mode="finish"]'), text: '<b>Spec tab.</b> Click it, or press Next. This is where parts get their finish.', done: () => app.mode === 'finish' },
+    { at: () => q('[data-mode="finish"]'), text: '<b>Spec tab.</b> This is where parts get their finish.', done: () => app.mode === 'finish' },
     { at: () => q('[data-panel="layers"]'), start: toMode('finish'), text: '<b>Spec map.</b> Click a colour on the sheet, or a layer, to pick it. This list shows everything that has a finish of its own; the rest is gloss.' },
     { at: () => q('.finishes') || q('[data-panel="props"]'), start: toMode('finish'), text: '<b>Finish.</b> Pick Gloss, Matte, Chrome and so on for what you picked. The sliders under it fine-tune it.' },
     { at: () => null, text: '<b>That is painting.</b> Hover any tool to see what it does; the line at the bottom says how to use the one you have.' },
