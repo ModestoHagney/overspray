@@ -7,6 +7,11 @@
 
 const $ = (id) => document.getElementById(id);
 const seen = (el) => el && el.getClientRects().length > 0;
+const q = (sel) => document.querySelector(sel);
+const tool = (id) => () => q(`[data-tool="${id}"]`);
+const NEEDS = ' Opens once a template is in.';
+// Paint mode's own strip: the tools steps point at are only there
+const toPaint = () => { const b = q('[data-mode="paint"]'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); };
 
 const TUTORIALS = {
   setup: (app) => {
@@ -29,7 +34,27 @@ const TUTORIALS = {
       { at: () => null, text: '<b>You are set up.</b> Hover any button to see what it does, and F1 lists the keys.' },
     ];
   },
+  painting: (app) => [
+    { at: tool('select'), start: toPaint, text: '<b>Select (V).</b> Click something on the sheet to pick it, then drag to move it. Its settings show in Properties on the right.' },
+    { at: tool('hand'), text: '<b>Hand (H).</b> Drag to move around the sheet. Holding Space does the same with any tool, and the mouse wheel zooms.' },
+    { at: tool('pen'), text: '<b>Pen (P).</b> Click points to draw your own shape. Enter finishes it.' },
+    { at: tool('shape'), text: '<b>Shape (U).</b> Ready-made shapes: pick one from its menu, then drag on the sheet.' },
+    { at: tool('band'), text: '<b>Band (B).</b> A straight stripe. Click where it starts, then where it ends. It snaps to panel edges.' },
+    { at: tool('stamp'), text: '<b>Stamp (S).</b> Each click places another copy of a shape.' },
+    { at: tool('text'), text: '<b>Text (T).</b> Click where the text goes, then type. The font is in Properties.' },
+    { at: tool('image'), text: '<b>Library.</b> Logos, pictures and the shapes you have saved.' },
+    { at: tool('piece'), text: '<b>Fill panel (G).</b> Click a panel to fill it. Shift+click adds another panel to the same layer.' + NEEDS },
+    { at: tool('cargrad'), text: '<b>Car gradient.</b> A fade along the whole car, matching on both sides.' + NEEDS },
+    { at: tool('extras'), text: '<b>Car extras.</b> The pit box, colour squares and pitboard. iRacing colours these from small squares on the sheet.' + NEEDS },
+    { at: () => $('c-pick'), start: toPaint, text: '<b>Colour.</b> Click the box to pick a colour for what is selected. The dots under it are colours already in this livery: click one to use it again.' },
+    { at: () => q('[data-mode="finish"]'), text: '<b>Spec tab.</b> Click it. This is where parts get their finish.', done: () => app.mode === 'finish' },
+    { at: () => q('[data-panel="layers"]'), text: '<b>Spec map.</b> Click a colour on the sheet, or a layer, to pick it. This list shows everything that has a finish of its own; the rest is gloss.' },
+    { at: () => q('.finishes') || q('[data-panel="props"]'), text: '<b>Finish.</b> Pick Gloss, Matte, Chrome and so on for what you picked. The sliders under it fine-tune it.' },
+    { at: () => null, text: '<b>That is painting.</b> Hover any tool to see what it does; the line at the bottom says how to use the one you have.' },
+  ],
 };
+// in order: the end of one offers the next
+export const TUTORIAL_NAMES = { setup: 'Getting set up', painting: 'Painting' };
 
 let stop = null;
 
@@ -48,11 +73,12 @@ export function startTour(app, name = 'setup') {
   const go = (n) => {
     while (n < steps.length - 1 && n > k && steps[n].skip && steps[n].skip()) n++; // nothing to do there: on to the next
     k = Math.max(0, Math.min(steps.length - 1, n));
-    const s = steps[k], last = k === steps.length - 1;
+    const s = steps[k], last = k === steps.length - 1, names = Object.keys(TUTORIAL_NAMES), more = names[names.indexOf(name) + 1];
     if (s.start) s.start();
     armed = !!s.done && !s.done(); // already done (coming Back to it): it waits for Next
-    bubble.innerHTML = `<p>${s.text}</p><footer><span>${k + 1} / ${steps.length}</span><button class="btn" data-t="skip">${last ? 'Close' : 'Skip'}</button>` +
-      `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next">${last ? 'Done' : 'Next'}</button></footer>`;
+    bubble.innerHTML = `<p>${s.text}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
+      `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next">${last ? 'Done' : 'Next'}</button></footer>` +
+      (last && more ? `<footer><button class="btn tour" data-t="more">Next tutorial: ${TUTORIAL_NAMES[more]}</button></footer>` : '');
     at = null;
     place();
   };
@@ -86,6 +112,7 @@ export function startTour(app, name = 'setup') {
     if (!t) return;
     if (t.dataset.t === 'next') return k === steps.length - 1 ? stop() : go(k + 1);
     if (t.dataset.t === 'back') return go(k - 1);
+    if (t.dataset.t === 'more') { const names = Object.keys(TUTORIAL_NAMES); return startTour(app, names[names.indexOf(name) + 1]); }
     stop();
   };
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { e.stopPropagation(); stop(); } };

@@ -981,7 +981,7 @@ const actions = {
   },
 
   pickTemplate: () => $('file-template').click(),
-  tour: () => startTour(app),
+  tour: (name) => startTour(app, name),
   // where the cars' template files are: Trading Paints lists them all, free, no login
   getTemplate() { const tab = window.open('https://www.tradingpaints.com/cartemplates', '_blank'); if (tab) tab.opener = null; else ui.say('Allow pop-ups for this site, or open tradingpaints.com/cartemplates', true); },
   async loadTemplateFile(file) {
@@ -2953,7 +2953,7 @@ $('file-map').addEventListener('change', (e) => {
 $('btn-empty-template').addEventListener('click', actions.pickTemplate);
 $('btn-empty-paint').addEventListener('click', actions.pickPaint);
 $('btn-empty-livery').addEventListener('click', actions.pickLivery);
-$('btn-tour').addEventListener('click', actions.tour);
+$('btn-tour').addEventListener('click', () => actions.tour());
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 $('btn-theme').addEventListener('click', () => actions.flipTheme());

@@ -106,6 +106,7 @@ input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); o
 .tour-bubble a { color: var(--accent); }
 .tour-bubble footer { display: flex; gap: 6px; align-items: center; }
 .tour-bubble footer span { margin-right: auto; color: var(--muted); }
+.tour-bubble footer + footer { margin-top: 8px; justify-content: flex-end; }
 .foot { position: absolute; left: 14px; bottom: 12px; display: flex; align-items: center; gap: 8px; max-width: calc(100% - 28px); pointer-events: none; }
 .foot > * { pointer-events: auto; }
 .hint { padding: 5px 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

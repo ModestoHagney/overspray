@@ -212,7 +212,7 @@ export function initUI(app, actions, version) {
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Tutorial: getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Tutorial: getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Tutorial: painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
@@ -1261,6 +1261,7 @@ export function initUI(app, actions, version) {
     if (!act) return;
     if (act.startsWith('show:')) { const k = act.slice(5); app.show[k] = !app.show[k]; actions.redraw(); actions.saveView(); return; } // a view choice: nothing in the livery changes
     if (act.startsWith('theme:')) return actions.setTheme(act.slice(6));
+    if (act.startsWith('tour:')) return actions.tour(act.slice(5));
     if (act === 'shortcuts') return shortcuts();
     if (act === 'about') return about();
     return actions[act]();
