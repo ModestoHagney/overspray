@@ -26,7 +26,7 @@ import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly,
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
-import { initMap, syncGuide, guideLayer, pairList, setGuidePink, linkList, findLinks } from './map.js';
+import { initMap, syncGuide, guideLayer, guideParts, pairList, setGuidePink, linkList, findLinks } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { startTour } from './tour.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
@@ -68,7 +68,7 @@ export const app = {
   board: null,                        // the pitboard picked in Car extras: { p (its swatch), had (layer ids then) }; what is added since stays inside it
   piece: null,                        // Map mode: the selected panel's id
   centreFor: null,                    // Map mode: the panel a centreline is being set on, if fixed
-  mapShow: { colours: true },         // Map mode: panel colours and names over the sheet
+  mapShow: { colours: true, links: true, centres: true, carColours: true, carLinks: true, carCentres: true }, // Map mode: what shows on the sheet, and on the car with the guide on
   pairOpen: null,                     // Pair panels: the list's open row, { key, ids (one panel, or the two being checked) }
   pairHover: null,                    // Pair panels: ids of the row under the pointer
   linkOpen: null,                     // Link edges: the suggested link open in the list, { key, link }
@@ -1428,14 +1428,31 @@ const actions = {
     m.places = m.places.filter(pl => pl.piece.region !== r.id);
     actions.mapChanged(`${r.name} no longer placed`);
   },
-  toggleMapColours() { app.mapShow.colours = !app.mapShow.colours; requestDraw(); ui.refresh(); },
+  toggleMapShow(k) { app.mapShow[k] = !app.mapShow[k]; requestDraw(); ui.refresh(); },
+  // the guide on the car: C or View › Map on car puts it on with the parts last
+  // ticked (all, if none were) or takes it off
   async toggleGuide() {
     if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
-    await syncGuide(app.doc, !guideLayer(app.doc));
+    const s = app.mapShow, on = !guideLayer(app.doc);
+    if (on && !s.carColours && !s.carLinks && !s.carCentres) s.carColours = s.carLinks = s.carCentres = true;
+    await actions.carGuide(on);
+  },
+  // one switch under On the car; the guide is on while any of them is
+  async toggleCarPart(k) {
+    if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
+    const s = app.mapShow;
+    if (!guideLayer(app.doc)) s.carColours = s.carLinks = s.carCentres = false; // they showed off: start from just this one
+    s[k] = !s[k];
+    await actions.carGuide(s.carColours || s.carLinks || s.carCentres);
+  },
+  async carGuide(on) {
+    Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
+    await syncGuide(app.doc, on);
     change({ now: true });
-    ui.say(guideLayer(app.doc) ? 'Panel colours are on the car. Switch this off before your real save.' : 'Panel colours are off the car');
+    ui.say(on ? 'The map is on the car. Switch it off before your real save.' : 'The map is off the car');
   },
   guideOn: () => !!guideLayer(app.doc),
+  carOn: (k) => !!guideLayer(app.doc) && app.mapShow[k],
   pickMapFile: () => $('file-map').click(),
   async loadMapFile(file) {
     if (file.size > MAP_FILE_MAX) { ui.say('Could not read that map: the file is too big for a map', true); return; }
@@ -1614,7 +1631,7 @@ const actions = {
       ui.refresh();
     } catch (err) { ui.say('Could not load that pull request: ' + err.message, true); }
   },
-  // Old / New: which map is on the sheet (and on the car, with Show on car).
+  // Old / New: which map is on the sheet (and on the car, with the guide on).
   // Fixes go on New; Old is only for looking at.
   async reviewSide(side) {
     const r = app.review;
@@ -3012,6 +3029,7 @@ async function boot() {
   const saved = loadView();
   takeBools(app.show, saved.show);
   takeBools(app.mapShow, saved.mapShow);
+  Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
   ui = initUI(app, actions, VERSION);
   ui.setLayout(saved.panels);
   tools = initTools(app, {
