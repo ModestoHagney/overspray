@@ -59,6 +59,7 @@ function linkKeys(m) {
   if (s !== keyCache.s) keyCache = { s, keys: links.map((l, i) => { const t = twinOf(m, l); return t ? Math.min(i, links.indexOf(t)) : i; }) };
   return keyCache.keys;
 }
+let bandCache = new Map(); // a link side's trimmed bands on the car → { sc, x0, y0 }, see guideCanvas
 const linkHue = (i) => `hsl(${(i * 137.5 + 40) % 360} 95% 62%)`;
 
 // Pair panels: the twins the map could still have (see suggestPairs), worked
@@ -94,7 +95,7 @@ export function guideCanvas(map) {
     ctx.strokeStyle = '#101114'; ctx.lineWidth = 3; ctx.stroke();
   });
   if (pink) return c; // just the panels being checked, nothing else to look past
-  const keys = linkKeys(map), at = (id) => panelHue(list.findIndex(r => r.id === id));
+  const keys = linkKeys(map), at = (id) => panelHue(list.findIndex(r => r.id === id)), used = new Map();
   if (guideParts.links) (map.links || []).forEach((link, i) => {
     const n = Math.max(3, Math.min(16, Math.round(linkLength(map, link) / 48)));
     const twins = map.links.filter((l, j) => keys[j] === keys[i]);
@@ -106,6 +107,9 @@ export function guideCanvas(map) {
       // this edge is nearest to before going on the sheet
       const all = linkPoints(map, link, side, 0, 1, 3);
       if (!all.length) continue;
+      // the slow part: kept from the last guide, so a map edit redraws only the links it changed
+      const key = JSON.stringify([all, regionOutline(r), bands.slice(0, n)]), kept = bandCache.get(key);
+      if (kept) { ctx.drawImage(kept.sc, kept.x0, kept.y0); used.set(key, kept); continue; }
       const x0 = Math.floor(Math.min(...all.map(q => q.x)) - 23), y0 = Math.floor(Math.min(...all.map(q => q.y)) - 23);
       const sc = document.createElement('canvas');
       sc.width = Math.ceil(Math.max(...all.map(q => q.x)) + 23) - x0; sc.height = Math.ceil(Math.max(...all.map(q => q.y)) + 23) - y0;
@@ -126,8 +130,10 @@ export function guideCanvas(map) {
       }
       g.putImageData(img, 0, 0);
       ctx.drawImage(sc, x0, y0);
+      used.set(key, { sc, x0, y0 });
     }
   });
+  if (guideParts.links) bandCache = used; // the bands of links gone or changed are let go
   if (guideParts.centres) for (const r of list) {
     const cl = centerLine(r);
     if (!cl) continue;
@@ -159,7 +165,10 @@ export async function syncGuide(doc, on) {
   if (!doc.regionMap) return;
   const src = guideCanvas(doc.regionMap).toDataURL('image/png');
   const img = await loadImage(src);
-  if (old) { old.img = img; old.src = src; return; }
+  // another press or edit may have put it on or taken it off while this one waited: never two of it
+  const now = guideLayer(doc);
+  if (now) { now.img = img; now.src = src; return; }
+  if (old) return; // a refresh of one taken off meanwhile: it stays off
   const layer = createImageLayer(img, src, GUIDE);
   layer.scale = 1;
   layer.locked = true; // sheet-sized: it must never be grabbed by a click

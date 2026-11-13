@@ -433,20 +433,51 @@ export function nearestIsStretch(outline, stretch, reach) {
     const a = outline[(i || outline.length) - 1];
     if (Math.max(a.x, b.x) >= x0 - reach && Math.min(a.x, b.x) <= x1 + reach && Math.max(a.y, b.y) >= y0 - reach && Math.min(a.y, b.y) <= y1 + reach) near.push([a, b]);
   });
+  // The stretch's and the outline's segments in a grid, so a spot looks only at
+  // the cells round it: a spot within CELL of the stretch finds its nearest
+  // point there, and its short way to that point can only cross outline there.
+  // A spot further out (none, for a band 2*reach wide) looks at everything.
+  const CELL = reach + 2, cellOf = (v) => Math.floor(v / CELL);
+  const i0 = cellOf(x0 - reach) - 1, j0 = cellOf(y0 - reach) - 1, ni = cellOf(x1 + reach) + 2 - i0, nj = cellOf(y1 + reach) + 2 - j0;
+  const grid = (segs) => { // each cell: the segments passing through it (cells outside the box are left empty)
+    const g = Array.from({ length: ni * nj }, () => []);
+    segs.forEach(([a, b], k) => {
+      for (let i = Math.max(0, cellOf(Math.min(a.x, b.x)) - i0); i <= Math.min(ni - 1, cellOf(Math.max(a.x, b.x)) - i0); i++)
+        for (let j = Math.max(0, cellOf(Math.min(a.y, b.y)) - j0); j <= Math.min(nj - 1, cellOf(Math.max(a.y, b.y)) - j0); j++) g[i * nj + j].push(k);
+    });
+    return g;
+  };
+  const segs = stretch.slice(1).map((b, k) => [stretch[k], b]), segGrid = grid(segs), nearGrid = grid(near);
+  const every = [segs.map((_, k) => k)], everyNear = [near.map((_, k) => k)];
+  // the lists of the 3x3 cells round a spot; a segment in two of them is looked at twice, which is harmless
+  const around = (g, x, y) => {
+    const ci = cellOf(x) - i0, cj = cellOf(y) - j0;
+    if (ci < 1 || cj < 1 || ci > ni - 2 || cj > nj - 2) return null; // off the grid: look at everything
+    return [g[(ci - 1) * nj + cj - 1], g[(ci - 1) * nj + cj], g[(ci - 1) * nj + cj + 1], g[ci * nj + cj - 1], g[ci * nj + cj], g[ci * nj + cj + 1], g[(ci + 1) * nj + cj - 1], g[(ci + 1) * nj + cj], g[(ci + 1) * nj + cj + 1]];
+  };
   const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
   const crosses = (p, q, a, b) => cross(p, q, a) * cross(p, q, b) < 0 && cross(a, b, p) * cross(a, b, q) < 0;
-  return (x, y) => {
-    let best = null, bd = Infinity;
-    for (let k = 1; k < stretch.length; k++) {
-      const a = stretch[k - 1], b = stretch[k], dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+  let bx = 0, by = 0, bd = Infinity;
+  const nearest = (x, y, lists) => {
+    let bk = Infinity;
+    bd = Infinity;
+    for (const l of lists) for (const k of l) {
+      const [a, b] = segs[k], dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
       const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2)) : 0;
-      const q = { x: a.x + t * dx, y: a.y + t * dy }, d = Math.hypot(q.x - x, q.y - y);
-      if (d < bd) { bd = d; best = q; }
+      const qx = a.x + t * dx, qy = a.y + t * dy, d = Math.hypot(qx - x, qy - y);
+      if (d < bd || (d === bd && k < bk)) { bd = d; bx = qx; by = qy; bk = k; } // the first of equals, as a plain scan gives
     }
-    if (!best || bd < 0.5) return true;
+  };
+  return (x, y) => {
+    const cells = around(segGrid, x, y);
+    if (cells) nearest(x, y, cells);
+    const local = cells && bd <= CELL;
+    if (!local) nearest(x, y, every);
+    if (bd === Infinity || bd < 0.5) return true;
     // stop half a px short of the edge, so the edge the point sits on doesn't count
-    const p = { x, y }, q = { x: best.x + (x - best.x) * 0.5 / bd, y: best.y + (y - best.y) * 0.5 / bd };
-    return !near.some(([a, b]) => crosses(p, q, a, b));
+    const p = { x, y }, q = { x: bx + (x - bx) * 0.5 / bd, y: by + (y - by) * 0.5 / bd };
+    for (const l of local ? around(nearGrid, x, y) : everyNear) for (const k of l) if (crosses(p, q, near[k][0], near[k][1])) return false;
+    return true;
   };
 }
 
