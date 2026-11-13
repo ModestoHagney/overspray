@@ -27,7 +27,6 @@ const around = (...els) => {
 };
 // a tool and its options box beside it (Shape's shapes, Band's width, Stamp's shape and size)
 const withOpts = (id) => () => around(tool(id)(), $('toolopts'));
-const openFold = (id) => { const d = $(id); if (d && !d.open) d.open = true; };
 const doThen = (...fs) => () => fs.forEach((f) => f());
 
 const TUTORIALS = {
@@ -91,21 +90,22 @@ const TUTORIALS = {
     ];
   },
   gradients: (app) => {
-    let layers = 0;
-    const picked = () => app.doc.layers.find((l) => l.id === app.sel);
-    const fading = () => { const l = picked(); return !!l && (l.fillType === 'linear' || l.fillType === 'radial'); };
-    const look = (f) => () => { openFold('f-look'); return f(); }; // the fade's settings are in the Look fold
+    const win = () => shown(q('.cgwin'));
+    const lineCount = () => ((app.doc.regionMap && app.doc.regionMap.carLines) || []).length;
+    let lines = 0;
     return [
-      { at: withOpts('shape'), start: () => { toPaint(); pick('shape', app)(); layers = app.doc.layers.length; },
-        text: '<b>Shape (U).</b> A fade goes on a shape. Pick one beside the tool and drag it on the sheet.',
-        done: () => app.doc.layers.length > layers && (picked() || {}).type === 'fill' },
-      { at: look(() => q('label:has(#f-fade)')), text: '<b>Fade.</b> Switch it on in Properties. The paint now fades out across the shape.', done: fading },
-      { at: look(() => q('.seg:has([data-fade])')), text: '<b>Across</b> fades in a straight line. <b>From the middle</b> fades out in a circle.' },
-      { at: look(() => q('[data-act="addFadeColour"]')), text: '<b>Add a colour.</b> One more colour on the way, with a slider for where along the fade it sits. Up to 8.' },
-      { at: look(() => { const c = q('#f-fade-to'); return c && (c.closest('.field') || c); }), text: '<b>Fades to.</b> With <b>Nothing</b> ticked it fades out to see-through. Untick it to fade to a colour instead, and pick the colour beside it.' },
-      { at: () => $('hint'), text: '<b>Aim it.</b> Drag the two dots on the shape to set where the fade starts and ends.' }, // the line at the bottom says so too, and the shape stays in view
-      { at: tool('cargrad'), text: '<b>Car gradient.</b> One fade along the whole car, matching on both sides. Its window sets the colours along a strip that stands for the car, front to back.' + NEEDS },
-      { at: () => null, text: '<b>That is gradients.</b>' },
+      { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : q('#menus button')),
+        text: '<b>Open blank template…</b> A car gradient is laid out on the car\'s panels, so open its template first.',
+        done: () => !!app.doc.template, skip: () => !!app.doc.template },
+      { at: tool('cargrad'), start: toPaint, text: '<b>Car gradient.</b> One fade along the whole car, the same on both sides. Click it: it adds a car gradient layer and opens its window.', done: () => !!win() },
+      { at: () => q('.cgwin .cg-strip'), text: '<b>The strip</b> stands for the car, front to back. Each panel takes the colours of its own stretch of it.' },
+      { at: () => q('.cgwin .cg-blocks'), text: '<b>Its colours.</b> Drag one to move it, drag its ends to make it longer or shorter, and click it to change the colour. A gap between two colours fades; colours that touch meet at a sharp edge.' },
+      { at: () => q('.cgwin [data-cg="add"]'), text: '<b>Add a colour.</b> One more, in the widest gap.' },
+      { at: () => q('.cgwin [data-cg="pick"]'), text: '<b>Set panels.</b> Says where each panel sits along the car. Click it.', done: () => !!q('.cgwin [data-cg="pick"][aria-pressed="true"]') },
+      { at: () => q('.cgwin [data-cg="pick"]'), start: () => { lines = lineCount(); }, // beside the window, so the sheet stays in view
+        text: 'Click panels on the sheet (Shift+click adds one, or drag a box round them). Then drag an arrow across them, from the front of the car to the back.', done: () => lineCount() > lines },
+      { at: () => q('.cgwin .cg-lines'), text: '<b>A bar</b> for the panels you picked, in their colour on the sheet. Drag it to where they sit under the strip, and drag its ends to stretch it. Hover a bar to see its panels.' },
+      { at: () => null, text: '<b>That is the car gradient.</b> The panel lines are saved with the car\'s map, so every car gradient on this car uses them. <b>Edit gradient…</b> in Properties opens the window again.' },
     ];
   },
   library: (app) => {
