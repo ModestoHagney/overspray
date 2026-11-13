@@ -14,6 +14,21 @@ const NEEDS = ' Opens once a template is in.';
 const toMode = (m) => () => { const b = q(`[data-mode="${m}"]`); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); };
 const toPaint = toMode('paint');
 const shown = (...els) => els.find(seen) || null; // the first of them on screen
+// a tool picked, as its button would: Shape opens its row of shapes again
+const pick = (id, app) => () => { const b = tool(id)(); if (b && (b.getAttribute('aria-pressed') !== 'true' || (id === 'shape' && !app.shapeMenu))) b.click(); };
+// several elements as one spot: the box round all of them on screen
+const around = (...els) => {
+  const on = els.filter(seen);
+  return !on.length ? null : { getClientRects: () => [1], getBoundingClientRect: () => {
+    const rs = on.map((e) => e.getBoundingClientRect()), left = Math.min(...rs.map((r) => r.left)), top = Math.min(...rs.map((r) => r.top));
+    const right = Math.max(...rs.map((r) => r.right)), bottom = Math.max(...rs.map((r) => r.bottom));
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  } };
+};
+// a tool and its options box beside it (Shape's shapes, Band's width, Stamp's shape and size)
+const withOpts = (id) => () => around(tool(id)(), $('toolopts'));
+const openFold = (id) => { const d = $(id); if (d && !d.open) d.open = true; };
+const doThen = (...fs) => () => fs.forEach((f) => f());
 
 const TUTORIALS = {
   setup: (app) => {
@@ -37,21 +52,22 @@ const TUTORIALS = {
     ];
   },
   painting: (app) => [
-    { at: tool('select'), start: toPaint, text: '<b>Select (V).</b> Click something on the sheet to pick it, then drag to move it. Its settings show in Properties on the right.' },
-    { at: tool('hand'), text: '<b>Hand (H).</b> Drag to move around the sheet. Holding Space does the same with any tool, and the mouse wheel zooms.' },
-    { at: tool('pen'), text: '<b>Pen (P).</b> Click points to draw your own shape. Enter finishes it.' },
-    { at: tool('shape'), text: '<b>Shape (U).</b> Ready-made shapes: pick one from its menu, then drag on the sheet.' },
-    { at: tool('band'), text: '<b>Band (B).</b> A straight stripe. Click where it starts, then where it ends. It snaps to panel edges.' },
-    { at: tool('stamp'), text: '<b>Stamp (S).</b> Each click places another copy of a shape.' },
-    { at: tool('text'), text: '<b>Text (T).</b> Click where the text goes, then type. The font is in Properties.' },
-    { at: tool('image'), text: '<b>Library.</b> Logos, pictures and the shapes you have saved.' },
-    { at: tool('piece'), text: '<b>Fill panel (G).</b> Click a panel to fill it. Shift+click adds another panel to the same layer.' + NEEDS },
+    { at: tool('select'), start: doThen(toPaint, pick('select', app)), text: '<b>Select (V).</b> Click something on the sheet to pick it, then drag to move it. Its settings show in Properties on the right.' },
+    { at: tool('hand'), start: pick('hand', app), text: '<b>Hand (H).</b> Drag to move around the sheet. Holding Space does the same with any tool, and the mouse wheel zooms.' },
+    { at: tool('pen'), start: pick('pen', app), text: '<b>Pen (P).</b> Click points to draw your own shape. Enter finishes it.' },
+    { at: withOpts('shape'), start: pick('shape', app), text: '<b>Shape (U).</b> Ready-made shapes. Pick one beside the tool, then drag on the sheet to size it. Each one is a layer of its own.' },
+    { at: withOpts('band'), start: pick('band', app), text: '<b>Band (B).</b> A straight stripe. Click where it starts, then where it ends. It snaps to panel edges. Its width is beside the tool.' },
+    { at: withOpts('stamp'), start: pick('stamp', app), text: '<b>Stamp (S).</b> Pick a shape and a size beside the tool, then each click drops another copy, all the same size. The copies go in one Stamps layer, so they move and change colour together.' },
+    { at: tool('text'), start: pick('text', app), text: '<b>Text (T).</b> Click where the text goes, then type. The font is in Properties.' },
+    { at: tool('image'), text: '<b>Library.</b> Logos, pictures and the shapes you have saved. The Library tutorial shows it.' },
+    { at: tool('piece'), start: () => { if (app.doc.template) pick('piece', app)(); }, text: '<b>Fill panel (G).</b> Click a panel to fill it. Shift+click adds another panel to the same layer.' + NEEDS },
     { at: tool('cargrad'), text: '<b>Car gradient.</b> A fade along the whole car, matching on both sides.' + NEEDS },
     { at: tool('extras'), text: '<b>Car extras.</b> The pit box, colour squares and pitboard. iRacing colours these from small squares on the sheet.' + NEEDS },
-    { at: () => $('c-pick'), start: toPaint, text: '<b>Colour.</b> Click the box to pick a colour for what is selected. The dots under it are colours already in this livery: click one to use it again.' },
+    { at: () => $('c-pick'), start: doThen(toPaint, pick('select', app)), text: '<b>Colour.</b> Click the box to pick a colour for what is selected. The dots under it are colours already in this livery: click one to use it again.' },
     { at: () => q('[data-mode="finish"]'), text: '<b>Spec tab.</b> This is where parts get their finish.', done: () => app.mode === 'finish' },
     { at: () => q('[data-panel="layers"]'), start: toMode('finish'), text: '<b>Spec map.</b> Click a colour on the sheet, or a layer, to pick it. This list shows everything that has a finish of its own; the rest is gloss.' },
-    { at: () => q('.finishes') || q('[data-panel="props"]'), start: toMode('finish'), text: '<b>Finish.</b> Pick Gloss, Matte, Chrome and so on for what you picked. The sliders under it fine-tune it.' },
+    { at: () => q('.finishes') || q('[data-panel="props"]'), start: doThen(toMode('finish'), () => { const base = q('[data-fin]'); if (!app.ftarget && base) base.click(); }), // nothing picked: the Base coat (first in the list), so the whole panel shows
+      text: '<b>Finish.</b> Pick Gloss, Matte, Chrome and so on for what you picked (the Base coat, if nothing was). The sliders under it fine-tune it.' },
     { at: () => null, text: '<b>That is painting.</b> Hover any tool to see what it does; the line at the bottom says how to use the one you have.' },
   ],
   maps: (app) => {
@@ -74,9 +90,53 @@ const TUTORIALS = {
       { at: () => null, text: '<b>That is maps.</b> Share map… sends yours to the shared library, so the next person with this car can use it.' },
     ];
   },
+  gradients: (app) => {
+    let layers = 0;
+    const picked = () => app.doc.layers.find((l) => l.id === app.sel);
+    const fading = () => { const l = picked(); return !!l && (l.fillType === 'linear' || l.fillType === 'radial'); };
+    const look = (f) => () => { openFold('f-look'); return f(); }; // the fade's settings are in the Look fold
+    return [
+      { at: withOpts('shape'), start: () => { toPaint(); pick('shape', app)(); layers = app.doc.layers.length; },
+        text: '<b>Shape (U).</b> A fade goes on a shape. Pick one beside the tool and drag it on the sheet.',
+        done: () => app.doc.layers.length > layers && (picked() || {}).type === 'fill' },
+      { at: look(() => q('label:has(#f-fade)')), text: '<b>Fade.</b> Switch it on in Properties. The paint now fades out across the shape.', done: fading },
+      { at: look(() => q('.seg:has([data-fade])')), text: '<b>Across</b> fades in a straight line. <b>From the middle</b> fades out in a circle.' },
+      { at: look(() => q('[data-act="addFadeColour"]')), text: '<b>Add a colour.</b> One more colour on the way, with a slider for where along the fade it sits. Up to 8.' },
+      { at: look(() => { const c = q('#f-fade-to'); return c && (c.closest('.field') || c); }), text: '<b>Fades to.</b> With <b>Nothing</b> ticked it fades out to see-through. Untick it to fade to a colour instead, and pick the colour beside it.' },
+      { at: () => $('hint'), text: '<b>Aim it.</b> Drag the two dots on the shape to set where the fade starts and ends.' }, // the line at the bottom says so too, and the shape stays in view
+      { at: tool('cargrad'), text: '<b>Car gradient.</b> One fade along the whole car, matching on both sides. Its window sets the colours along a strip that stands for the car, front to back.' + NEEDS },
+      { at: () => null, text: '<b>That is gradients.</b>' },
+    ];
+  },
+  library: (app) => {
+    const open = () => !!q('dialog.lib[open]');
+    const tab = (k) => () => !!q(`[data-libtab="${k}"][aria-pressed="true"]`);
+    return [
+      { at: tool('image'), start: toPaint, text: '<b>Library.</b> Click it to open the library.', done: open },
+      { at: () => q('[data-libtab="logos"]'), text: '<b>Your pictures.</b> Logos and pictures you bring in are kept here for every livery. <b>Picture from a file…</b> brings one in.' },
+      { at: () => q('[data-libtab="shapes"]'), text: '<b>Your shapes.</b> Click it.', done: tab('shapes') },
+      { at: () => q('.tiles') || q('#dlg-body .note'), text: 'Shapes you draw, find or bring in are kept here. Click one to put it on the sheet. A shape takes a colour, and works with Stamp and Repeat too.' },
+      { at: () => q('[data-lib="draw:"]'), text: '<b>Draw a shape</b> opens a blank page to draw your own. The Drawing shapes tutorial shows how.' },
+      { at: () => q('[data-lib="shapefile:"]'), text: '<b>Shape from an SVG file…</b> makes a shape from what an SVG file fills.' },
+      { at: () => q('[data-libtab="search"]'), text: '<b>Search icons.</b> Click it.', done: tab('search') },
+      { at: () => q('#lib-q'), text: 'Type a word, like flame or wing, and press Enter. Click a find to put it on the sheet as a shape. It is kept in Your shapes too.' },
+      { at: () => null, text: '<b>That is the library.</b> Edit › Save to library keeps several selected layers as one, in Your shapes.' },
+    ];
+  },
+  shapes: (app) => [
+    { at: tool('image'), start: toPaint, text: '<b>Library.</b> Open it, click <b>Your shapes</b>, then <b>Draw a shape</b>.', done: () => !!app.workshop },
+    { at: () => $('shapebox'), text: '<b>Draw a shape.</b> A blank page. Everything drawn here becomes one shape for your library.' },
+    { at: tool('pen'), start: pick('pen', app), text: '<b>Pen (P).</b> Click points round your shape, then press Enter. Backspace takes back a point, and Shift holds 45°.' },
+    { at: withOpts('shape'), start: pick('shape', app), text: '<b>Shape (U).</b> Ready-made shapes work here too. Draw them over each other to build one shape out of several.' },
+    { at: () => $('sb-wrap'), start: pick('select', app), text: '<b>Wrap.</b> Select shapes first. One shape is pulled tight round them, like a rubber band: two circles become a slot.' },
+    { at: () => $('sb-split'), text: '<b>Split.</b> Makes each piece a shape of its own again.' },
+    { at: () => $('sb-fillIn'), text: '<b>Fill in.</b> Makes it solid: its holes are filled.' },
+    { at: () => q('[data-act="saveDrawnShape"]'), text: '<b>Save to library</b> (Ctrl+S). Joins everything into one shape, names it and keeps it in Your shapes. <b>Cancel</b> throws the drawing away.' },
+    { at: () => null, text: '<b>That is drawing shapes.</b> A saved shape takes a colour, and works with Shape, Stamp and Repeat like any other.' },
+  ],
 };
 // in order: the end of one offers the next
-export const TUTORIAL_NAMES = { setup: 'Getting set up', painting: 'Painting', maps: 'Maps' };
+export const TUTORIAL_NAMES = { setup: 'Getting set up', painting: 'Painting', maps: 'Maps', gradients: 'Gradients', library: 'Library', shapes: 'Drawing shapes' };
 
 let stop = null;
 
@@ -109,6 +169,8 @@ export function startTour(app, name = 'setup') {
   };
   // the spot sits on the step's element; the bubble beside it, kept on screen
   const place = () => {
+    const host = q('dialog[open]') || document.body; // over an open dialog (the library), the tour goes inside it
+    if (bubble.parentNode !== host) host.append(dim, spot, bubble);
     const el = steps[k].at();
     at = seen(el) ? el : null;
     const r = at ? at.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 2 };
