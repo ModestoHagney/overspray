@@ -62,7 +62,8 @@ const TUTORIALS = {
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => q('[data-mode="map"]'), text: '<b>Map tab.</b> Where you tell Overspray how the panels fit together on the car.', done: () => app.mode === 'map' },
       { at: () => q('[data-act="browseMaps"]'), start: toMap, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
-      { at: () => q('label:has(#m-colours)'), start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. Turn on <b>View › Panel colours on car</b> (1) to see the same colours on the car, so you can tell which panel is which.' },
+      { at: () => { const a = q('label:has(#m-colours)'), b = q('label:has(#m-centres)'); if (!a || !b) return a; const r = document.createRange(); r.setStartBefore(a); r.setEndAfter(b); return r; }, // the three switches as one spot
+        start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. <b>Linked edges</b> and <b>Centrelines</b> show those too. <b>View › Map on car</b> (C) puts them on the car, so you can tell which panel is which. Keys 1, 2 and 3 switch Panel colours on car, Linked edges on car and Centrelines on car one at a time.' },
       { at: tool('mpair'), start: toMap, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
       { at: tool('mcentre'), start: toMap, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
       { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Click an edge, then the edge it meets on the other panel. Drag an end to fine-tune it.' },
