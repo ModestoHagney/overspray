@@ -412,8 +412,10 @@ export function carStops(blocks) {
   }
   return out;
 }
+// a colour from a file: only #rrggbb or #rrggbbaa, so it is safe to put in a style or markup
+const hexc = (v, d) => (typeof v === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v) ? v : d);
 export const cleanCar = (c) => {
-  const blocks = c && Array.isArray(c.blocks) ? c.blocks.filter(b => b && typeof b.color === 'string' && Number.isFinite(b.from) && Number.isFinite(b.to)).slice(0, 12) : [];
+  const blocks = c && Array.isArray(c.blocks) ? c.blocks.filter(b => b && hexc(b.color) && Number.isFinite(b.from) && Number.isFinite(b.to)).slice(0, 12) : [];
   return blocks.length ? { blocks: blocks.map(b => ({ color: b.color, from: b.from, to: b.to })) } : null;
 };
 
@@ -1254,7 +1256,7 @@ function decodeImage(src) {
 
 // a saved shadow, its missing numbers filled in as the panel shows them
 const normalizeFx = (fx) => (fx && typeof fx === 'object'
-  ? { shadow: fx.shadow ?? 0, shadowDX: fx.shadowDX ?? 8, shadowDY: fx.shadowDY ?? 8, shadowColor: fx.shadowColor || '#000000' }
+  ? { shadow: fx.shadow ?? 0, shadowDX: fx.shadowDX ?? 8, shadowDY: fx.shadowDY ?? 8, shadowColor: hexc(fx.shadowColor, '#000000') }
   : null);
 
 // A saved livery (see serializeDoc) back as a document. Anything broken is
@@ -1267,7 +1269,7 @@ export async function deserializeDoc(data) {
     target: ['car', 'helmet', 'suit'].includes(data.target) ? data.target : 'car',
     customNumber: !!data.customNumber,
     car: typeof data.car === 'string' && data.car ? data.car : null,
-    baseColor: data.baseColor || doc.baseColor,
+    baseColor: hexc(data.baseColor, doc.baseColor),
     baseMaterial: data.baseMaterial || doc.baseMaterial,
     baseMatParams: data.baseMatParams || null,
   });
@@ -1308,15 +1310,15 @@ export async function deserializeDoc(data) {
     try {
       if (l.type === 'fill') {
         doc.layers.push({
-          ...createFillLayer(l.color || '#e8e6e1'),
+          ...createFillLayer(hexc(l.color, '#e8e6e1')),
           ...common(l, 'fill', 'fill'),
           shape: l.shape || 'rect',
           pts: shapePts(l.pts),
           turn: Number.isFinite(l.turn) ? l.turn : 0,
           colorRef: typeof l.colorRef === 'string' ? l.colorRef : null,
-          fillType: l.fillType || 'solid', color2: l.color2 || '#101114',
-          colorMid: l.colorMid || null, midPos: l.midPos ?? 0.5,
-          stops: Array.isArray(l.stops) ? l.stops.filter(o => o && typeof o.color === 'string' && Number.isFinite(o.at)).slice(0, 8).map(o => ({ color: o.color, at: o.at })) : [],
+          fillType: l.fillType || 'solid', color2: hexc(l.color2, '#101114'),
+          colorMid: hexc(l.colorMid, null), midPos: l.midPos ?? 0.5,
+          stops: Array.isArray(l.stops) ? l.stops.filter(o => o && hexc(o.color) && Number.isFinite(o.at)).slice(0, 8).map(o => ({ color: o.color, at: o.at })) : [],
           gradAngle: l.gradAngle ?? 0,
           car: cleanCar(l.car),
           rx: l.rx ?? 0, ry: l.ry ?? 0, rw: l.rw ?? SIZE, rh: l.rh ?? SIZE,
@@ -1328,7 +1330,7 @@ export async function deserializeDoc(data) {
           img: null, src: l.src || null,
           text: l.text ?? 'TEXT', font: l.font || 'Arial Black', fontSize: l.fontSize ?? 160,
           italic: !!l.italic, letterSpacing: l.letterSpacing ?? 0,
-          textColor: l.textColor || '#ffffff', outlineColor: l.outlineColor || '#000000', outlineWidth: l.outlineWidth ?? 0,
+          textColor: hexc(l.textColor, '#ffffff'), outlineColor: hexc(l.outlineColor, '#000000'), outlineWidth: l.outlineWidth ?? 0,
           fontWeight: Number.isFinite(l.fontWeight) ? l.fontWeight : null, lineSpacing: Number.isFinite(l.lineSpacing) ? l.lineSpacing : null,
           align: l.align === 'left' || l.align === 'right' ? l.align : null,
           curve: l.curve ?? 0,

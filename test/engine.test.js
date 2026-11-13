@@ -107,6 +107,19 @@ test('loading a shape fills in what an older save left out', async () => {
   assert.deepEqual([b.rx, b.ry, b.rw, b.rh, b.visible, b.opacity], [0, 0, 2048, 2048, true, 1]);
 });
 
+test('loading a file keeps only real colours, so a colour cannot carry markup', async () => {
+  const bad = '#000"><img src=x onerror=alert(1)>';
+  const doc = await deserializeDoc({ baseColor: bad, layers: [
+    { type: 'fill', color: bad, color2: bad, colorMid: bad, stops: [{ color: bad, at: 0.5 }, { color: '#112233', at: 0.6 }],
+      car: { blocks: [{ color: bad, from: 0, to: 0.5 }, { color: '#aabbcc', from: 0.5, to: 1 }] } },
+  ] });
+  const [f] = doc.layers;
+  assert.equal(doc.baseColor, '#1a6cff');
+  assert.deepEqual([f.color, f.color2, f.colorMid], ['#e8e6e1', '#101114', null]);
+  assert.deepEqual(f.stops, [{ color: '#112233', at: 0.6 }]);
+  assert.deepEqual(f.car.blocks.map(b => b.color), ['#aabbcc']);
+});
+
 test('loading a picture keeps its shadow (missing numbers filled in) and its own height scale', async () => {
   const doc = await deserializeDoc({ layers: [
     { type: 'image', src: 'data:a', fx: { shadow: 30, shadowColor: '#0000ff' }, scale: 0.5, scaleY: 1.5 },
