@@ -35,7 +35,7 @@ import { pointInPolygon, regionOutline, parseRegionMap, mapFit, regionById, rena
 // what needs the template's panels says so, greyed out, until one is loaded
 const NEEDS_TEMPLATE = 'Open a blank template first';
 const needTemplate = () => { if (app.doc.template) return false; ui.say(NEEDS_TEMPLATE, true); return true; };
-export const VERSION = self.VERSION || 'unknown'; // from version.js, which the page loads first
+export const VERSION = (self.VERSION || 'unknown') + (location.pathname.includes('/_lab/') ? ` (build ${self.BUILD})` : ''); // from version.js, which the page loads first; the build only on the test copy
 
 const $ = (id) => document.getElementById(id);
 const cv = $('view');

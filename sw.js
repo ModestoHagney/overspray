@@ -1,7 +1,7 @@
 // Overspray's offline worker. It keeps a copy of every file the app loads, so
 // the app still opens without a network.
 //
-// Each deploy bumps the version in version.js, which names a new cache below.
+// Each PR bumps the build in version.js, which names a new cache below.
 // The browser sees the worker has changed; the app saves, tells it to take
 // over, and reloads once.
 
@@ -9,7 +9,7 @@ importScripts('./version.js');
 // The scope is in the name: the live site and the test copy (/_lab/overspray)
 // share one origin, so one must not clear the other's cache.
 const SCOPE = self.registration.scope;
-const CACHE = 'overspray-' + self.VERSION + ' ' + SCOPE;
+const CACHE = 'overspray-' + self.VERSION + '.' + self.BUILD + ' ' + SCOPE;
 
 // Kept at install: the page, the version and the icons, so the app can start
 // offline straight away. Every path here must exist in the repo, or the

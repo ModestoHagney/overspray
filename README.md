@@ -35,8 +35,8 @@ and Live need Chrome or Edge; everything else works in other browsers.
   `shapes.js`, `mirror.js`, `finish.js`, `svgpath.js`, `trace.js`, `regions.js`,
   `zones.js`, `template.js`, `psd.js`, `tga.js`, `iracing.js`, `persist.js`.
 - `test/` — `npm test`.
-- `version.js` — the version, in one place. Bump it on every deploy.
-- `sw.js` — the service worker. It names its cache after the version, which
+- `version.js` — the version and build, in one place. Bump the build on every PR, the version when a batch goes live.
+- `sw.js` — the service worker. It names its cache after the build, which
   is how a browser notices a new one.
 
 ## Credits
