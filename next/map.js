@@ -370,7 +370,8 @@ export function initMap(app, env) {
   }
 
   const copied = (added) => (added.length ? `, and ${added.length} link${added.length > 1 ? 's' : ''} copied to the other side` : '');
-  const dropAdded = (added) => { const l = map().links || []; for (const t of added) if (l.includes(t)) l.splice(l.indexOf(t), 1); };
+  // by content, not by object: an undo then redo swaps in a fresh copy of the map
+  const dropAdded = (added) => { const l = map().links || [], keys = added.map(t => JSON.stringify(t)); for (let i = l.length - 1; i >= 0; i--) { const k = keys.indexOf(JSON.stringify(l[i])); if (k >= 0) { l.splice(i, 1); keys.splice(k, 1); } } };
 
   // the panel whose edge is nearest, for a line started off every panel (a wing that sits above the side)
   function nearestPiece(p, not) {
@@ -429,7 +430,7 @@ export function initMap(app, env) {
       app.piece = r.id;
       const added = addTwins(map()); // links made before the centreline get their twins now
       if (app.centreFor) { app.centreFor = null; app.tool = 'mpick'; } // from the panel's button: just that one
-      else undos.push(() => { if (before) r.center = before; else delete r.center; dropAdded(added); pending = first; return `Centreline taken off ${r.name}`; });
+      else undos.push(() => { const x = regionById(map(), r.id); if (!x) return ''; if (before) x.center = before; else delete x.center; dropAdded(added); pending = first; return `Centreline taken off ${x.name}`; });
       env.mapChanged(`Centreline set on ${r.name}${copied(added)}`);
       return;
     }
@@ -439,13 +440,13 @@ export function initMap(app, env) {
       if (app.pairOpen) { env.pairPick(r.id); return; } // a row of the list is open: this is the panel to pair it with instead
       if (!pairFirst) { pairFirst = r.id; env.pickPiece(r.id); return; }
       if (r.id === pairFirst) { env.say('Now click its pair, a different panel'); return; }
-      const a = regionById(map(), pairFirst), before = map().regions.map(x => [x, x.mirror, x.mirrorKind]);
+      const a = regionById(map(), pairFirst), before = map().regions.map(x => [x.id, x.mirror, x.mirrorKind]);
       setMirror(map(), a, r.id);
       const added = addTwins(map());
       pairFirst = null;
       app.piece = a.id; // shows the pair just made
       undos.push(() => {
-        for (const [x, m, k] of before) { if (m) x.mirror = m; else delete x.mirror; if (k) x.mirrorKind = k; else delete x.mirrorKind; }
+        for (const [id, m, k] of before) { const x = regionById(map(), id); if (!x) continue; if (m) x.mirror = m; else delete x.mirror; if (k) x.mirrorKind = k; else delete x.mirrorKind; }
         dropAdded(added);
         pairFirst = app.piece = a.id;
         return `${a.name} and ${r.name} unpaired`;

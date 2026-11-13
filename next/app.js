@@ -534,7 +534,9 @@ async function runSave() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (held && quick) { saveTimer = setTimeout(runSave, 300); return; } // mid-drag: once it is let go
-  const data = serializeDoc(app.doc);
+  // while the pairing list is open, the guide on the car (pink panels) is only for looking: not saved, not an undo step
+  // ponytail: a guide that was on before pairing is left out too while it is open; C puts it back after a reload
+  const data = serializeDoc(pairGuide === null ? app.doc : { ...app.doc, layers: app.doc.layers.filter(l => l !== guideLayer(app.doc)) });
   if (app.workshop) { capture(data); return; } // a shape being drawn: it has undo steps, but it is never saved as the livery nor sent to the car
   const json = JSON.stringify(data); // stringify before capture, which is free to intern
   capture(data);
@@ -1295,7 +1297,6 @@ const actions = {
   },
   pairClose() { app.pairOpen = null; actions.pairShow(null); },
   // msg: said once the car has caught up. One undo step, the map edit before it included
-  // ponytail: opening a row is an undo step too (the guide on the car changes); skip capture if that gets in the way
   async pairShow(open, msg) {
     app.pairOpen = open;
     requestDraw(); ui.refresh();
