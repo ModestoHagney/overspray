@@ -3,7 +3,7 @@
 // tutorial, or Help), never by itself.
 // A step: { at: () => element or null (null: the bubble sits in the middle),
 // text, done: () => true once the person has done what the step asks (it then
-// moves on by itself), skip: () => true when there is nothing to do }
+// moves on by itself; Next stays off till then unless free), skip: () => true when there is nothing to do }
 
 const $ = (id) => document.getElementById(id);
 const seen = (el) => el && el.getClientRects().length > 0;
@@ -24,10 +24,10 @@ const TUTORIALS = {
       { at: () => document.querySelector('[data-mode="finish"]'), text: '<b>Spec tab.</b> The spec map: which parts are gloss, matte or chrome.' },
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : document.querySelector('#menus button')),
         text: '<b>Open blank template…</b> Pick your car\'s template. No template yet? <a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Download one from Trading Paints</a>, then come back here.',
-        done: () => !!app.doc.template, skip: () => !!app.doc.template, must: 1 },
+        done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => $('btn-live'),
         text: '<b>Live.</b> Press it. It asks for your iRacing customer ID: in iRacing, click your name or helmet in the top right, then the copy button beside your ID. Then pick your paints folder: Documents › iRacing › paints.',
-        done: () => app.live && !app.liveBad, skip: () => app.live && !app.liveBad },
+        done: () => app.live && !app.liveBad, skip: () => app.live && !app.liveBad, free: 1 }, // Next skips it: iRacing may not be to hand
       { at: () => null, text: '<b>Open the car in iRacing.</b> In iRacing, go to My Content › Cars, find the car your template is for in the list and click it, then click the Car Model tab. It shows the car in 3D with your paint on it. Keep it open.' },
       { at: () => document.querySelector('[data-tool="piece"]'),
         text: '<b>Fill panel (G).</b> Pick it, then click a panel on the sheet.',
@@ -60,7 +60,7 @@ const TUTORIALS = {
     return [
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : q('#menus button')),
         text: '<b>Open blank template…</b> The map is made from your car\'s template, so open it first.',
-        done: () => !!app.doc.template, skip: () => !!app.doc.template, must: 1 },
+        done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => q('[data-mode="map"]'), text: '<b>Map tab.</b> Where you tell Overspray how the panels fit together on the car.', done: () => app.mode === 'map' },
       { at: () => q('[data-act="browseMaps"]'), start: toMap, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
       { at: () => { const a = q('label:has(#m-colours)'), b = q('label:has(#m-centres)'); if (!seen(a) || !seen(b)) return a; const r = document.createRange(); r.setStartBefore(a); r.setEndAfter(b); return r; }, // the three switches as one spot
@@ -91,15 +91,18 @@ export function startTour(app, name = 'setup') {
   bubble.setAttribute('aria-label', 'Tutorial');
   document.body.append(dim, spot, bubble);
   let k = -1, at = null, armed = false;
+  const passed = new Set(); // steps already got past once: coming back to one, Next is on
 
   const go = (n) => {
+    if (n > k && k >= 0) passed.add(k);
     while (n < steps.length - 1 && n > k && steps[n].skip && steps[n].skip()) n++; // nothing to do there: on to the next
     k = Math.max(0, Math.min(steps.length - 1, n));
     const s = steps[k], last = k === steps.length - 1, names = Object.keys(TUTORIAL_NAMES), more = names[names.indexOf(name) + 1];
     if (s.start) s.start();
     armed = !!s.done && !s.done(); // already done (coming Back to it): it waits for Next
+    const wait = armed && !s.free && !passed.has(k); // Next stays off until it is done
     bubble.innerHTML = `<p>${s.text}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
-      `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next"${s.must && !s.done() ? ' disabled title="Open a template first"' : ''}>${last ? 'Done' : 'Next'}</button></footer>` +
+      `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next"${wait ? ' disabled title="Do this step first. Skip ends the tutorial."' : ''}>${last ? 'Done' : 'Next'}</button></footer>` +
       (last && more ? `<footer><button class="btn tour" data-t="more">Next tutorial: ${TUTORIAL_NAMES[more]}</button></footer>` : '');
     at = null;
     place();
