@@ -13,6 +13,9 @@ const NEEDS = ' Opens once a template is in.';
 // Paint mode's own strip: the tools steps point at are only there
 const toMode = (m) => () => { const b = q(`[data-mode="${m}"]`); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); };
 const toPaint = toMode('paint');
+const shown = (...els) => els.find(seen) || null; // the first of them on screen
+// a Map tab step: the Map tab itself while there is no template to open it
+const inMap = (f) => () => shown(f(), q('[data-mode="map"]'));
 
 const TUTORIALS = {
   setup: (app) => {
@@ -30,7 +33,7 @@ const TUTORIALS = {
       { at: () => null, text: '<b>Open the car in iRacing.</b> In iRacing, go to My Content › Cars, find the car your template is for in the list and click it, then click the Car Model tab. It shows the car in 3D with your paint on it. Keep it open.' },
       { at: () => document.querySelector('[data-tool="piece"]'),
         text: '<b>Fill panel (G).</b> Pick it, then click a panel on the sheet.',
-        start: () => { layers = app.doc.layers.length; }, done: () => app.doc.layers.length > layers },
+        start: () => { toPaint(); layers = app.doc.layers.length; }, done: () => app.doc.layers.length > layers },
       { at: () => $('btn-live'), text: '<b>Look at the car in iRacing.</b> The panel you filled should now be painted. Every change you make goes to the car like this while Live is on.' },
       { at: () => null, text: '<b>You are set up.</b> Hover any button to see what it does, and F1 lists the keys.' },
     ];
@@ -61,15 +64,15 @@ const TUTORIALS = {
         text: '<b>Open blank template…</b> The map is made from your car\'s template, so open it first.',
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => q('[data-mode="map"]'), text: '<b>Map tab.</b> Where you tell Overspray how the panels fit together on the car.', done: () => app.mode === 'map' },
-      { at: () => q('[data-act="browseMaps"]'), start: toMap, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
-      { at: () => { const a = q('label:has(#m-colours)'), b = q('label:has(#m-centres)'); if (!a || !b) return a; const r = document.createRange(); r.setStartBefore(a); r.setEndAfter(b); return r; }, // the three switches as one spot
-        start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. <b>Linked edges</b> and <b>Centrelines</b> show those too. <b>View › Map on car</b> (C) puts them on the car, so you can tell which panel is which. Keys 1, 2 and 3 switch Panel colours on car, Linked edges on car and Centrelines on car one at a time.' },
-      { at: tool('mpair'), start: toMap, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
-      { at: tool('mcentre'), start: toMap, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
-      { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Click an edge, then the edge it meets on the other panel. Drag an end to fine-tune it.' },
+      { at: inMap(() => q('[data-act="browseMaps"]')), start: toMap, needs: 1, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
+      { at: inMap(() => { const a = q('label:has(#m-colours)'), b = q('label:has(#m-centres)'); if (!seen(a) || !seen(b)) return a; const r = document.createRange(); r.setStartBefore(a); r.setEndAfter(b); return r; }), // the three switches as one spot
+        start: toMap, needs: 1, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. <b>Linked edges</b> and <b>Centrelines</b> show those too. <b>View › Map on car</b> (C) puts them on the car, so you can tell which panel is which. Keys 1, 2 and 3 switch Panel colours on car, Linked edges on car and Centrelines on car one at a time.' },
+      { at: inMap(tool('mpair')), start: toMap, needs: 1, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
+      { at: inMap(tool('mcentre')), start: toMap, needs: 1, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
+      { at: inMap(tool('mlink')), start: toMap, needs: 1, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Click an edge, then the edge it meets on the other panel. Drag an end to fine-tune it.' },
       { at: () => q('[data-mode="paint"]'), text: '<b>Paint tab.</b> Now see what the map does.', done: () => app.mode === 'paint' },
       { at: tool('piece'), start: () => { toPaint(); layers = app.doc.layers.length; }, text: '<b>Fill panel (G).</b> Pick it, then click a panel that has a twin, so there is something to mirror.', done: () => app.doc.layers.length > layers },
-      { at: () => q('.panel [data-act="mirror"]') || q('[data-panel="props"]'), start: toPaint, text: '<b>Mirrored (Ctrl+M).</b> Press it in Properties. The panel you filled gets painted on its twin too, or across the centreline.' },
+      { at: () => shown(q('.panel [data-act="mirror"]'), q('[data-panel="props"]')), start: toPaint, text: '<b>Mirrored (Ctrl+M).</b> Press it in Properties. The panel you filled gets painted on its twin too, or across the centreline.' },
       { at: () => null, text: '<b>That is maps.</b> Share map… sends yours to the shared library, so the next person with this car can use it.' },
     ];
   },
@@ -97,7 +100,7 @@ export function startTour(app, name = 'setup') {
     const s = steps[k], last = k === steps.length - 1, names = Object.keys(TUTORIAL_NAMES), more = names[names.indexOf(name) + 1];
     if (s.start) s.start();
     armed = !!s.done && !s.done(); // already done (coming Back to it): it waits for Next
-    bubble.innerHTML = `<p>${s.text}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
+    bubble.innerHTML = `<p>${s.text}${s.needs && !app.doc.template ? NEEDS : ''}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
       `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next">${last ? 'Done' : 'Next'}</button></footer>` +
       (last && more ? `<footer><button class="btn tour" data-t="more">Next tutorial: ${TUTORIAL_NAMES[more]}</button></footer>` : '');
     at = null;
