@@ -937,6 +937,9 @@ async function endShape(keep) {
   if (item) ui.say(`${item.name} is in Your shapes`);
 }
 
+// presses of C, 1, 2 and 3 take turns: each sees the guide as the one before left it
+let guideQueue = Promise.resolve();
+const guideTurn = (f) => (guideQueue = guideQueue.then(f, f));
 const actions = {
   undo, redo, fit,
   drawShape: startShape,
@@ -1400,20 +1403,20 @@ const actions = {
   toggleMapShow(k) { app.mapShow[k] = !app.mapShow[k]; requestDraw(); ui.refresh(); },
   // the guide on the car: C or View › Map on car puts it on with the parts last
   // ticked (all, if none were) or takes it off
-  async toggleGuide() {
+  toggleGuide: () => guideTurn(async () => {
     if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
     const s = app.mapShow, on = !guideLayer(app.doc);
     if (on && !s.carColours && !s.carLinks && !s.carCentres) s.carColours = s.carLinks = s.carCentres = true;
     await actions.carGuide(on);
-  },
+  }),
   // one part of the map on the car (View › … on car, 1 2 3); the guide is on while any of them is
-  async toggleCarPart(k) {
+  toggleCarPart: (k) => guideTurn(async () => {
     if (!app.doc.regionMap) { ui.say(NEEDS_TEMPLATE, true); return; }
     const s = app.mapShow;
     if (!guideLayer(app.doc)) s.carColours = s.carLinks = s.carCentres = false; // they showed off: start from just this one
     s[k] = !s[k];
     await actions.carGuide(s.carColours || s.carLinks || s.carCentres);
-  },
+  }),
   async carGuide(on) {
     Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
     await syncGuide(app.doc, on);

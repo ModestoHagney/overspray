@@ -392,6 +392,37 @@ test('nearestIsStretch stops a band at a slit but not at a corner', () => {
   assert.equal(nearestIsStretch(outline, top, 22)(3, 10), true);
 });
 
+test('nearestIsStretch gives what a plain scan of every segment gives', () => {
+  // the slow way it used to be done, for comparing
+  const plain = (outline, stretch, x, y) => {
+    let best = null, bd = Infinity;
+    for (let k = 1; k < stretch.length; k++) {
+      const a = stretch[k - 1], b = stretch[k], dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2)) : 0;
+      const q = { x: a.x + t * dx, y: a.y + t * dy }, d = Math.hypot(q.x - x, q.y - y);
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (!best || bd < 0.5) return true;
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const p = { x, y }, q = { x: best.x + (x - best.x) * 0.5 / bd, y: best.y + (y - best.y) * 0.5 / bd };
+    const xs = stretch.map(q => q.x), ys = stretch.map(q => q.y), r = 22; // only outline near the stretch, as before
+    return !outline.some((b, i) => {
+      const a = outline[(i || outline.length) - 1];
+      if (Math.max(a.x, b.x) < Math.min(...xs) - r || Math.min(a.x, b.x) > Math.max(...xs) + r || Math.max(a.y, b.y) < Math.min(...ys) - r || Math.min(a.y, b.y) > Math.max(...ys) + r) return false;
+      return cross(p, q, a) * cross(p, q, b) < 0 && cross(a, b, p) * cross(a, b, q) < 0;
+    });
+  };
+  // a zigzag panel, the stretch its jagged top, and spots near and far
+  const outline = [{ x: 0, y: 100 }, ...Array.from({ length: 9 }, (_, k) => ({ x: k * 25, y: k % 2 ? 40 : 0 })), { x: 200, y: 100 }];
+  const top = [];
+  for (let k = 1; k < 9; k++) for (let s = 0; s < 8; s++) { const a = outline[k], b = outline[k + 1]; top.push({ x: a.x + (b.x - a.x) * s / 8, y: a.y + (b.y - a.y) * s / 8 }); }
+  const mine = nearestIsStretch(outline, top, 22);
+  let seed = 7, odd = 0;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let n = 0; n < 4000; n++) { const x = rnd() * 260 - 30, y = rnd() * 160 - 30; if (mine(x, y) !== plain(outline, top, x, y)) odd++; }
+  assert.equal(odd, 0);
+});
+
 test('guessMirrorKind gives the same answer whichever panel comes first', () => {
   let seed = 7;
   const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
