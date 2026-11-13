@@ -189,7 +189,7 @@ export function initMap(app, env) {
   let ends = [];        // the ends set so far for the link being made: { region, x, y }
   let first = null;     // the first side, when it was picked as an edge: { click, side }
   let hover = null;     // what a click would pick right now, as a link with one side or both: { a, b? }
-  let handle = null;    // the end 1 of a link under the pointer: a click swaps that link's ends
+  let handle = null;    // the end of a link under the pointer: a click swaps that link's ends
   let seam = null;      // near a linked edge: that spot and the one it meets, { at, partner }
   let slide = null;     // a link's end being slid along its edge: { region, ends, start, moved }
   let picked = null;    // the link end last grabbed, for the arrow keys to nudge: { region, ends }
@@ -348,18 +348,18 @@ export function initMap(app, env) {
     ends = []; snap = first = hover = null;
     env.mapChanged(`Linked ${nameOf(link.a.region)} and ${nameOf(link.b.region)}` + (twin ? `, and ${nameOf(twin.a.region)} and ${nameOf(twin.b.region)}` : ''));
   }
-  // The link whose end 1 is under the pointer, newest first: { link, at }
-  function endOneAt(s) {
+  // The link with an end under the pointer, newest first: { link, at }
+  function endAt(s) {
     const links = map().links || [];
-    for (let i = links.length - 1; i >= 0; i--) for (const sd of [links[i].a, links[i].b]) {
-      const q = docToScreen(sd.from.x, sd.from.y);
-      if (Math.hypot(q.x - s.x, q.y - s.y) <= 9) return { link: links[i], at: sd.from };
+    for (let i = links.length - 1; i >= 0; i--) for (const sd of [links[i].a, links[i].b]) for (const end of [sd.from, sd.to]) {
+      const q = docToScreen(end.x, end.y);
+      if (Math.hypot(q.x - s.x, q.y - s.y) <= 9) return { link: links[i], at: end };
     }
     return null;
   }
-  // a click on a link's end 1: made the wrong way round, its ends swap over (its twin's too)
+  // a click on either end of a link: made the wrong way round, its ends swap over (its twin's too)
   function swapAt(s) {
-    const m = map(), hit = endOneAt(s);
+    const m = map(), hit = endAt(s);
     if (!hit) return false;
     const twin = twinOf(m, hit.link);
     swapLinkEnds(m, hit.link);
@@ -480,8 +480,8 @@ export function initMap(app, env) {
       // what a click here would do: place one end, swap a link's ends, or pick the edge lit up
       const one = e.ctrlKey || e.metaKey || ends.length % 2 === 1;
       snap = one ? linkSnap(p) : null;
-      const end1 = !one && !ends.length && !e.altKey ? endOneAt(s) : null;
-      handle = end1 && end1.at;
+      const end = !one && !ends.length && !e.altKey ? endAt(s) : null;
+      handle = end && end.at;
       hover = one || handle || e.altKey ? null : edgeHover(edgeSnap(p, null, EDGE_REACH / app.view.zoom, true));
       const m = matchPoint(map(), p.x, p.y, 10 / app.view.zoom); // where this spot lands on the other panel
       seam = m ? { at: m.at, partner: m.partner } : null;
@@ -540,7 +540,7 @@ export function initMap(app, env) {
     if (app.tool === 'mpair' && app.pairOpen) return `Click a panel to pair ${nameOf(app.pairOpen.ids[0])} with it instead · Esc closes the row`;
     if (app.tool === 'mpair') return (pairFirst ? `Now click the pair of ${nameOf(pairFirst)}` : 'Click a panel, then its pair on the other side of the car') + (!pairFirst && sel() && sel().mirror ? ' · F tries the next flip' : '') + takeBack;
     if (app.tool === 'mplace') return placing ? `Now drag the same line, front to back, where ${nameOf(placing.region)} sits on the car: over the panel it lies beside · Delete takes it back` : 'Drag a line along a loose piece (a wing, say), front to back. Placing it again moves it';
-    if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click an edge near one end, then the edge it meets on the other panel near the end that meets it · Ctrl+click places one end at a time · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · click a link\'s 1 to swap its ends · Alt+click removes a link',
+    if (app.tool === 'mlink') return [(picked ? '← → nudge this end (Shift: 10 px) · Esc lets go · ' : '') + 'Click an edge near one end, then the edge it meets on the other panel near the end that meets it · Ctrl+click places one end at a time · drag a link\'s end to move it (hold Alt to skip snapping), Shift+click it to nudge it with ← → · click a link\'s end to swap which ends meet · Alt+click removes a link',
       'Click the other end, on the same panel', 'Now the edge it meets on the other panel, near the end that meets 1 · Ctrl+click places its two ends instead, the one that meets 1 first', 'And the spot that meets end 2'][ends.length] + (ends.length ? takeBack : '');
     return sel() ? 'Name it, pair it or set its centreline on the right' : 'Click a panel';
   };
@@ -611,7 +611,7 @@ export function initMap(app, env) {
         ctx.strokeStyle = '#101114'; ctx.lineWidth = 11.2; ctx.stroke(); // half of each width shows
         ctx.strokeStyle = linkHue(keys[i]); ctx.lineWidth = 6.4; ctx.stroke();
         ctx.restore();
-        if (app.tool === 'mlink') { // end 1 says so: 1 meets 1, and a click on it swaps the ends
+        if (app.tool === 'mlink') { // end 1 says so: 1 meets 1
           dot(pts[0], 7, linkHue(keys[i]));
           const a = S(pts[0]);
           ctx.font = '700 10px "IBM Plex Mono", monospace'; ctx.fillStyle = '#101114'; ctx.fillText('1', a.x, a.y + 0.5);
