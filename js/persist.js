@@ -4,7 +4,7 @@
 
 // The test copy (/_lab/overspray) shares the live site's origin, so it keeps
 // its own database, or testing would overwrite the live autosave.
-const DB_NAME = globalThis.location?.pathname.includes('/_lab/') ? 'overspray-lab' : 'overspray';
+export const DB_NAME = globalThis.location?.pathname.includes('/_lab/') ? 'overspray-lab' : 'overspray';
 const STORE = 'kv'; // one key/value store holds everything
 
 // Run fn(store) in one transaction and resolve with what its request returns.
@@ -83,6 +83,15 @@ export async function getPaintsFolder({ requestIfNeeded = false } = {}) {
   if (state === 'prompt') state = await dir.requestPermission(mode);
   return state === 'granted' ? dir : null;
 }
+
+// The backup folder (Car setup): where each livery is also kept as an .overspray file.
+export async function pickBackupFolder() {
+  const dir = await window.showDirectoryPicker({ id: 'overspray-backup', mode: 'readwrite' });
+  await kvSet('backupDir', dir);
+  return dir;
+}
+export const getBackupFolder = () => kvGet('backupDir').then((d) => d || null);
+export const dropBackupFolder = () => kvSet('backupDir', null);
 
 export async function writeFileToFolder(dir, filename, blob) {
   const file = await dir.getFileHandle(filename, { create: true });
