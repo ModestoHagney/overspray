@@ -1027,7 +1027,7 @@ export function initUI(app, actions, version) {
         (cur.near.length ? `<optgroup label="Closest to this livery's name">${cur.near.map((c) => opt(c, c, false)).join('')}</optgroup><optgroup label="All">` : '') +
         cur.cars.map((c) => opt(c, c, c === cur.car)).join('') + (cur.near.length ? '</optgroup>' : '') + '</select></label>' : '') +
       `<div class="note">${!cur.folder ? 'No iRacing paints folder linked yet.' : cur.cars.length ? 'Folder linked: ' + esc(cur.folder) : `No car folders found in ${esc(cur.folder)}. Link the iRacing paints folder itself.`}</div>` +
-      `<div class="drow" title="Each livery is also kept in this folder as an .overspray file, updated every minute while you work. Optional"><span>Backup folder</span><span class="pair" id="cs-bk"></span></div>`;
+      `<div class="drow" title="Every saved livery is also kept in this folder as an .overspray file, updated within a minute of a change. Optional"><span>Backup folder</span><span class="pair" id="cs-bk"></span></div>`;
     const p = ask({ title: 'Car setup', body, ok: 'Save' });
     // the backup folder's row: each button works straight away, from its own click (the browser asks for that)
     const bk = $('cs-bk'), b = cur.backup;

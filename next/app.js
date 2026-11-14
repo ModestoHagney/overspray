@@ -530,10 +530,11 @@ function claim(id) {
     return new Promise((r) => { drop(); letGo = r; res(true); }); // held until let go, or the tab closes
   }).catch(() => res(true)));
 }
-// Backup folder (Car setup, Chrome and Edge): each livery also kept there as its .overspray
-// file, written once a minute while it changes (a whole livery can be tens of MB: not on every edit).
+// Backup folder (Car setup, Chrome and Edge): every saved livery also kept there as its
+// .overspray file. Checked once a minute; only liveries saved since their last backup are
+// written (a whole livery can be tens of MB: not on every edit). The times live with the
+// projects, so the tabs share them and a new folder starts them over.
 // ponytail: named after the livery, so two liveries given the same name share one file
-let backupJson = null;
 const backupState = {
   can: () => persist.fsSupported(),
   async now() {
@@ -543,21 +544,30 @@ const backupState = {
     app.backupPaused = !ok;
     return { name: dir.name, paused: !ok };
   },
-  async pick() { try { await persist.pickBackupFolder(); backupJson = null; backup(); } catch { /* cancelled */ } return backupState.now(); },
+  async pick() { try { await persist.pickBackupFolder(); await persist.saveSetting('backedUp', {}); backup(); } catch { /* cancelled */ } return backupState.now(); },
   async allow() { const dir = await persist.getBackupFolder().catch(() => null); if (dir) await dir.requestPermission({ mode: 'readwrite' }).catch(() => {}); backup(); return backupState.now(); },
   async stop() { await persist.dropBackupFolder().catch(() => {}); return backupState.now(); },
 };
+let backingUp = false;
 async function backup() {
-  const json = lastJson;
-  if (!app.projectId || !json || json === backupJson || app.workshop) return;
+  if (backingUp) return; // the last round is still writing
+  backingUp = true;
   try {
     const dir = await persist.getBackupFolder();
     if (!dir) return;
     app.backupPaused = (await dir.queryPermission({ mode: 'readwrite' })) !== 'granted';
     if (app.backupPaused) return; // after a reload the browser wants a click first: Car setup has it
-    await persist.writeFileToFolder(dir, safeName() + '.overspray', new Blob([json], { type: 'application/json' }));
-    backupJson = json;
-  } catch { /* the folder moved or is full: tried again next minute */ }
+    const done = (await persist.loadSetting('backedUp').catch(() => null)) || {};
+    for (const p of await persist.listProjects()) {
+      if (done[p.id] && done[p.id] >= (p.updatedAt || 0)) continue;
+      let json = await persist.loadProject(p.id);
+      if (!json) continue;
+      if (typeof json !== 'string') json = JSON.stringify(json);
+      await persist.writeFileToFolder(dir, (p.name || 'livery').replace(/[^\w.-]+/g, '_') + '.overspray', new Blob([json], { type: 'application/json' }));
+      done[p.id] = p.updatedAt || Date.now();
+      await persist.saveSetting('backedUp', done);
+    }
+  } catch { /* the folder moved or is full: tried again next minute */ } finally { backingUp = false; }
 }
 setInterval(backup, 60000);
 const freshId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6); // a livery's id, never the same in two tabs
@@ -789,7 +799,6 @@ const safeName = () => (app.doc.name || 'livery').replace(/[^\w.-]+/g, '_');
 // → false (and nothing changes) when another tab has that livery open
 async function setDoc(doc, projectId) {
   await flush();
-  await backup(); // the one on screen gets its last edits into the backup folder before it goes
   if (projectId && !await claim(projectId)) return false;
   if (!projectId) { if (letGo) letGo(); letGo = heldId = null; }
   remember(projectId);
