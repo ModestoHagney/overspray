@@ -514,6 +514,10 @@ function change({ panels = true, now = false } = {}) {
 }
 
 let saveTimer = null, lastJson = null, saveWarned = false;
+// Only the first tab open saves: the tabs share one autosave and one library, so two saving would wipe each other's work.
+// ponytail: a later tab never takes over, even once the first is closed; reloading it does
+let ownsSave = true;
+const OTHER_TAB = 'Not saved: Overspray is open in another tab. Close the other tab, then reload this one.';
 // A map and a template "fit" when nearly all their traced panels line up
 // (see mapFit); less, and the map was made for another car or for an older
 // version of this car's template, so its links may land in the wrong places
@@ -538,6 +542,7 @@ async function runSave() {
   // ponytail: a guide that was on before pairing is left out too while it is open; C puts it back after a reload
   const data = serializeDoc(pairGuide === null ? app.doc : { ...app.doc, layers: app.doc.layers.filter(l => l !== guideLayer(app.doc)) });
   if (app.workshop) { capture(data); return; } // a shape being drawn: it has undo steps, but it is never saved as the livery nor sent to the car
+  if (!ownsSave) { capture(data); ui.say(OTHER_TAB, true); return false; } // nor sent Live: two tabs would fight over the car too
   const json = JSON.stringify(data); // stringify before capture, which is free to intern
   capture(data);
   if (json !== lastJson) {
@@ -822,7 +827,7 @@ const toolChanged = () => {
 const handCursor = () => cv.classList.toggle('pan', (spaceHeld || app.tool === 'hand') && !app.workshop);
 
 let library = { logos: [], shapes: [], sets: [], palettes: [] }; // sets: several layers kept as one thing (a badge in three colours, a logo with its lettering)
-const saveLibrary = () => persist.saveBlob('next-library', library).catch(() => { /* quota: it still works this session */ });
+const saveLibrary = () => ownsSave && persist.saveBlob('next-library', library).catch(() => { /* quota: it still works this session */ });
 // A shape brought in from outside (an icon, an SVG file) is kept in the
 // library, so it is there for Repeat and stamps too. One already kept (the
 // same icon again) is not kept twice. → the library's copy
@@ -980,7 +985,7 @@ const actions = {
       app.projectId = Date.now().toString(36);
       lastJson = null;
     }
-    if (await runSave() === false) ui.say(SAVE_FAILED, true);
+    if (await runSave() === false) ui.say(ownsSave ? SAVE_FAILED : OTHER_TAB, true);
     else ui.say(`Saved ${app.doc.name}`);
     ui.refreshChrome();
   },
@@ -2984,6 +2989,8 @@ async function boot() {
     } catch { /* treated as not granted */ }
     app.liveBad = !granted;
   }
+  // held until this tab closes (_lab and the live site share it too: same autosave)
+  if (navigator.locks) await new Promise((res) => navigator.locks.request('overspray-tab', { ifAvailable: true }, (lock) => { ownsSave = !!lock; res(); return lock && new Promise(() => {}); }).catch(res));
   try {
     const json = await persist.loadBlob('next-autosave');
     if (json) {
@@ -3005,6 +3012,7 @@ async function boot() {
   takeBools(app.mapShow, saved.mapShow);
   Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
   ui = initUI(app, actions, VERSION);
+  if (!ownsSave) ui.say(OTHER_TAB, true);
   ui.setLayout(saved.panels);
   tools = initTools(app, {
     screenToDoc, docToScreen, change, requestDraw,
