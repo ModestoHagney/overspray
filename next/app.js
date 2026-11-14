@@ -801,6 +801,7 @@ const safeName = () => (app.doc.name || 'livery').replace(/[^\w.-]+/g, '_');
 
 // → false (and nothing changes) when another tab has that livery open
 async function setDoc(doc, projectId) {
+  if (app.review) await actions.reviewStop(); // a review is of the livery it started on: that one gets its own map back first
   await flush();
   if (projectId && !await claim(projectId)) return false;
   if (!projectId) { if (letGo) letGo(); letGo = heldId = null; }
