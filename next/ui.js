@@ -1344,7 +1344,7 @@ export function initUI(app, actions, version) {
   };
   $('stage').addEventListener('contextmenu', (e) => {
     if (e.target.closest('.panel')) return;
-    openCtx(e, [...layerItems(), 0, ['Fit to screen', 'F', 'fit']]);
+    openCtx(e, app.mode === 'map' ? [['Fit to screen', 'F', 'fit']] : [...layerItems(), 0, ['Fit to screen', 'F', 'fit']]); // the Map tab has no layers to act on
   });
   panels.layers.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('.row[data-layer]');
