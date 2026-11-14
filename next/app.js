@@ -514,10 +514,60 @@ function change({ panels = true, now = false } = {}) {
 }
 
 let saveTimer = null, lastJson = null, saveWarned = false;
-// Only the first tab open saves: the tabs share one autosave and one library, so two saving would wipe each other's work.
-// ponytail: a later tab never takes over, even once the first is closed; reloading it does
-let ownsSave = true;
-const OTHER_TAB = 'Not saved: Overspray is open in another tab. Close the other tab, then reload this one.';
+// Every livery with something in it is a project (File › Open…), saved as it changes, and each tab
+// holds its own: a lock per livery (Web Locks), so one livery is never open in two tabs to wipe
+// each other's work. The tab remembers its livery (sessionStorage), so a reload brings back that one.
+const TAB_KEY = 'overspray-livery';
+let heldId = null, letGo = null;
+function remember(id) { try { if (id) sessionStorage.setItem(TAB_KEY, id); else sessionStorage.removeItem(TAB_KEY); } catch { /* storage blocked: a reload opens the last one saved */ } }
+// → whether this tab now holds livery `id` (false: another tab has it). The one held before is let go.
+function claim(id) {
+  if (!id || id === heldId) return Promise.resolve(true);
+  const drop = () => { if (letGo) letGo(); letGo = null; heldId = id; };
+  if (!navigator.locks) { drop(); return Promise.resolve(true); }
+  return new Promise((res) => navigator.locks.request(`${persist.DB_NAME}:livery:${id}`, { ifAvailable: true }, (lock) => {
+    if (!lock) return res(false);
+    return new Promise((r) => { drop(); letGo = r; res(true); }); // held until let go, or the tab closes
+  }).catch(() => res(true)));
+}
+// Backup folder (Car setup, Chrome and Edge): each livery also kept there as its .overspray
+// file, written once a minute while it changes (a whole livery can be tens of MB: not on every edit).
+// ponytail: named after the livery, so two liveries given the same name share one file
+let backupJson = null;
+const backupState = {
+  can: () => persist.fsSupported(),
+  async now() {
+    const dir = await persist.getBackupFolder().catch(() => null);
+    if (!dir) return null;
+    const ok = (await dir.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted';
+    app.backupPaused = !ok;
+    return { name: dir.name, paused: !ok };
+  },
+  async pick() { try { await persist.pickBackupFolder(); backupJson = null; backup(); } catch { /* cancelled */ } return backupState.now(); },
+  async allow() { const dir = await persist.getBackupFolder().catch(() => null); if (dir) await dir.requestPermission({ mode: 'readwrite' }).catch(() => {}); backup(); return backupState.now(); },
+  async stop() { await persist.dropBackupFolder().catch(() => {}); return backupState.now(); },
+};
+async function backup() {
+  const json = lastJson;
+  if (!app.projectId || !json || json === backupJson || app.workshop) return;
+  try {
+    const dir = await persist.getBackupFolder();
+    if (!dir) return;
+    app.backupPaused = (await dir.queryPermission({ mode: 'readwrite' })) !== 'granted';
+    if (app.backupPaused) return; // after a reload the browser wants a click first: Car setup has it
+    await persist.writeFileToFolder(dir, safeName() + '.overspray', new Blob([json], { type: 'application/json' }));
+    backupJson = json;
+  } catch { /* the folder moved or is full: tried again next minute */ }
+}
+setInterval(backup, 60000);
+const freshId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6); // a livery's id, never the same in two tabs
+// the car's name, or "Toyota Camry 2" when another livery already has it
+async function freeName(base) {
+  const taken = new Set((await persist.listProjects().catch(() => [])).filter(p => p.id !== app.projectId).map(p => p.name));
+  let name = base, n = 1;
+  while (taken.has(name)) name = `${base} ${++n}`;
+  return name;
+}
 // A map and a template "fit" when nearly all their traced panels line up
 // (see mapFit); less, and the map was made for another car or for an older
 // version of this car's template, so its links may land in the wrong places
@@ -542,16 +592,21 @@ async function runSave() {
   // ponytail: a guide that was on before pairing is left out too while it is open; C puts it back after a reload
   const data = serializeDoc(pairGuide === null ? app.doc : { ...app.doc, layers: app.doc.layers.filter(l => l !== guideLayer(app.doc)) });
   if (app.workshop) { capture(data); return; } // a shape being drawn: it has undo steps, but it is never saved as the livery nor sent to the car
-  if (!ownsSave) { capture(data); ui.say(OTHER_TAB, true); return false; } // nor sent Live: two tabs would fight over the car too
   const json = JSON.stringify(data); // stringify before capture, which is free to intern
   capture(data);
-  if (json !== lastJson) {
+  if (!app.projectId && (app.doc.layers.length || app.doc.template)) { // something in it: kept from now on
+    app.projectId = freshId();
+    claim(app.projectId); // a new id: no other tab can have it
+    if (ui) ui.refreshChrome(); // its name shows at the top
+    const d = app.doc;
+    if (d.name === 'untitled livery') freeName('Untitled livery').then((n) => { if (app.doc === d && d.name === 'untitled livery') { d.name = n; change({ now: true }); } });
+  }
+  if (json !== lastJson && app.projectId) {
     lastJson = json;
     try {
-      // its own slot: the original screen's autosave is never overwritten from here
-      await persist.saveBlob('next-autosave', json);
-      await persist.saveSetting('next-project', app.projectId);
-      if (app.projectId) await persist.saveProject(app.projectId, { name: app.doc.name, thumb: projectThumb() }, json);
+      await persist.saveProject(app.projectId, { name: app.doc.name, thumb: projectThumb() }, json);
+      await persist.saveSetting('next-project', app.projectId); // a new tab opens the last one saved
+      remember(app.projectId);
       saveWarned = false;
     } catch { // quota or private mode: the livery is still on screen, so say so once and try again on the next save
       lastJson = null;
@@ -731,8 +786,13 @@ function download(blob, name) {
 }
 const safeName = () => (app.doc.name || 'livery').replace(/[^\w.-]+/g, '_');
 
+// → false (and nothing changes) when another tab has that livery open
 async function setDoc(doc, projectId) {
   await flush();
+  await backup(); // the one on screen gets its last edits into the backup folder before it goes
+  if (projectId && !await claim(projectId)) return false;
+  if (!projectId) { if (letGo) letGo(); letGo = heldId = null; }
+  remember(projectId);
   if (tools) tools.cancel();
   if (mapTools) mapTools.cancel();
   app.piece = app.centreFor = null;
@@ -827,7 +887,12 @@ const toolChanged = () => {
 const handCursor = () => cv.classList.toggle('pan', (spaceHeld || app.tool === 'hand') && !app.workshop);
 
 let library = { logos: [], shapes: [], sets: [], palettes: [] }; // sets: several layers kept as one thing (a badge in three colours, a logo with its lettering)
-const saveLibrary = () => ownsSave && persist.saveBlob('next-library', library).catch(() => { /* quota: it still works this session */ });
+// The library is shared by every tab: a tab that saves it tells the others, which read it again,
+// so one tab never writes back an old copy over what another just added.
+const libTalk = 'BroadcastChannel' in self ? new BroadcastChannel(persist.DB_NAME + ':library') : null;
+const readLibrary = (lib) => ({ logos: Array.isArray(lib?.logos) ? lib.logos : [], shapes: Array.isArray(lib?.shapes) ? lib.shapes : [], sets: Array.isArray(lib?.sets) ? lib.sets : [], palettes: readPalettes(lib?.palettes) });
+const saveLibrary = () => persist.saveBlob('next-library', library).then(() => libTalk && libTalk.postMessage('saved')).catch(() => { /* quota: it still works this session */ });
+if (libTalk) libTalk.onmessage = async () => { try { library = readLibrary(await persist.loadBlob('next-library')); if (ui) ui.refresh(); } catch { /* keeps the copy it has */ } };
 // A shape brought in from outside (an icon, an SVG file) is kept in the
 // library, so it is there for Repeat and stamps too. One already kept (the
 // same icon again) is not kept twice. → the library's copy
@@ -956,10 +1021,9 @@ const actions = {
   change,
 
   async newLivery() {
-    const d = app.doc;
-    if ((d.layers.length || d.template) && !app.projectId
-        && !await ui.ask({ title: 'Start a new livery?', body: 'This one is not saved as a project yet.', ok: 'Start new' })) return;
+    const had = app.projectId && app.doc.name;
     await setDoc(newDoc(), null);
+    if (had) ui.say(`${had} is kept in File › Open…`);
   },
 
   async open() {
@@ -970,24 +1034,24 @@ const actions = {
       let data = await persist.loadProject(id);
       if (typeof data === 'string') data = JSON.parse(data);
       if (!data) throw new Error('missing');
-      await setDoc(await deserializeDoc(data), id);
+      if (await setDoc(await deserializeDoc(data), id) === false) { ui.say('That livery is open in another tab', true); return; }
       ui.say(`Opened ${app.doc.name}`);
     } catch {
       ui.say('Could not open that project', true);
     }
   },
 
+  // every change is saved by itself: this just does it now, and says so
   async save() {
-    if (!app.projectId) {
-      const name = await ui.askText({ title: 'Save as project', label: 'Name', value: app.doc.name || 'untitled livery', ok: 'Save' });
-      if (!name) return;
-      app.doc.name = name;
-      app.projectId = Date.now().toString(36);
-      lastJson = null;
-    }
-    if (await runSave() === false) ui.say(ownsSave ? SAVE_FAILED : OTHER_TAB, true);
-    else ui.say(`Saved ${app.doc.name}`);
+    if (await runSave() === false) ui.say(SAVE_FAILED, true);
+    else ui.say(app.projectId ? `Saved ${app.doc.name}` : 'Nothing to save yet: open a blank template to start');
     ui.refreshChrome();
+  },
+  rename(name) {
+    name = (name || '').trim().slice(0, 60);
+    if (!name || name === app.doc.name) return ui.refreshChrome();
+    app.doc.name = name;
+    change({ now: true });
   },
 
   pickTemplate: () => $('file-template').click(),
@@ -1005,7 +1069,7 @@ const actions = {
       app.board = null;
       d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref, ...(had.clear && p.points ? { clear: true } : {}) } : { ...p, ref: null }; });
       if (!fixedSel() && !d.layers.some(l => l.id === app.sel)) app.sel = 'base';
-      if (!d.name || d.name === 'untitled livery') d.name = t.carName;
+      if (!d.name || /^untitled livery( \d+)?$/i.test(d.name)) d.name = await freeName(t.carName || 'Untitled livery'); // named after the car
       fit();
       change();
       await actions.findCar(t.carName);
@@ -1045,7 +1109,7 @@ const actions = {
   async carSetup(hint) {
     const { root, cars } = await actions.paintsFolder(true);
     const near = matchCar(hint || app.doc.name, cars).ranked.filter(r => r.score >= 0.3).slice(0, 3).map(r => r.folder);
-    const res = await ui.carSetup({ custid: app.custid, target: app.doc.target, customNumber: app.doc.customNumber, folder: root ? root.name : null, cars, near, car: app.doc.car });
+    const res = await ui.carSetup({ custid: app.custid, target: app.doc.target, customNumber: app.doc.customNumber, folder: root ? root.name : null, cars, near, car: app.doc.car, backup: backupState });
     if (!res) return false;
     app.custid = res.custid.trim();
     persist.saveSetting('custid', app.custid).catch(() => {});
@@ -2320,16 +2384,10 @@ const actions = {
     }
     try {
       const doc = await deserializeDoc(data);
-      // the livery on screen is not lost: one never saved is kept as a project first
-      const d = app.doc;
-      let kept = '';
-      if (!app.projectId && (d.layers.length || d.template)) {
-        app.projectId = Date.now().toString(36);
-        lastJson = null; // it is autosaved already, but not yet as a project
-        if (await runSave() !== false) kept = ` · The one before is in Open… as ${d.name}`;
-      }
+      // the livery on screen is kept already (setDoc saves its last edit first)
+      const kept = app.projectId ? ` · The one before is in File › Open… as ${app.doc.name}` : '';
       // always a new project: opening a file never writes over one already here
-      await setDoc(doc, Date.now().toString(36) + 'f');
+      await setDoc(doc, freshId());
       await runSave();
       ui.refreshChrome();
       ui.say(`Opened ${doc.name}${kept}`);
@@ -2947,6 +3005,12 @@ $('btn-tour').addEventListener('click', () => actions.tour());
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 $('btn-theme').addEventListener('click', () => actions.flipTheme());
+// the livery's name, renamed in place: Enter keeps it, Esc puts it back
+$('doc-name').addEventListener('change', (e) => actions.rename(e.target.value));
+$('doc-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Escape') { e.target.value = app.doc.name || ''; e.target.blur(); }
+});
 $('btn-live').addEventListener('click', actions.toggleLive);
 $('btn-zoom-in').addEventListener('click', () => actions.zoomBy(1.25));
 $('btn-zoom-out').addEventListener('click', () => actions.zoomBy(0.8));
@@ -2989,30 +3053,37 @@ async function boot() {
     } catch { /* treated as not granted */ }
     app.liveBad = !granted;
   }
-  // held until this tab closes (_lab and the live site share it too: same autosave)
-  if (navigator.locks) await new Promise((res) => navigator.locks.request('overspray-tab', { ifAvailable: true }, (lock) => { ownsSave = !!lock; res(); return lock && new Promise(() => {}); }).catch(res));
+  let busy = false; // the last livery is open in another tab: this one starts a new livery
   try {
-    const json = await persist.loadBlob('next-autosave');
-    if (json) {
+    let id = null;
+    try { id = sessionStorage.getItem(TAB_KEY); } catch { /* blocked: the last one saved */ }
+    id = id || (await persist.loadSetting('next-project').catch(() => null)) || null;
+    let data = id && await claim(id) ? await persist.loadProject(id) : null;
+    busy = !!id && heldId !== id;
+    if (!data && !id) data = await persist.loadBlob('next-autosave'); // ponytail: from before every livery was a project; it becomes one on its next save
+    else app.projectId = data ? id : null;
+    if (data) {
+      const json = typeof data === 'string' ? data : JSON.stringify(data);
       app.doc = await deserializeDoc(JSON.parse(json));
       oneSparkle(app.doc);
-      app.projectId = (await persist.loadSetting('next-project').catch(() => null)) || null;
       lastJson = json;
+      remember(app.projectId);
     }
-  } catch { /* a bad autosave must not stop the app opening */ }
+  } catch { /* a bad save must not stop the app opening */ }
   // the sheet may already have been drawn once, from the blank livery this
   // started with, while the saved one was still loading: draw it again
   dirty = true;
   try {
     const lib = await persist.loadBlob('next-library');
-    if (lib) library = { logos: Array.isArray(lib.logos) ? lib.logos : [], shapes: Array.isArray(lib.shapes) ? lib.shapes : [], sets: Array.isArray(lib.sets) ? lib.sets : [], palettes: readPalettes(lib.palettes) };
+    if (lib) library = readLibrary(lib);
   } catch { /* an empty library */ }
   const saved = loadView();
   takeBools(app.show, saved.show);
   takeBools(app.mapShow, saved.mapShow);
   Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
   ui = initUI(app, actions, VERSION);
-  if (!ownsSave) ui.say(OTHER_TAB, true);
+  if (busy) ui.say('Your last livery is open in another tab, so this tab starts a new one', true);
+  else if ((await backupState.now())?.paused) ui.say('Backup folder paused: File › Car setup… › Allow starts it again', true);
   ui.setLayout(saved.panels);
   tools = initTools(app, {
     screenToDoc, docToScreen, change, requestDraw,

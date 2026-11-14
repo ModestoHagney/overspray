@@ -48,6 +48,10 @@ input:focus-visible, textarea:focus-visible { outline: 1px solid var(--muted); o
 .brand .beta { margin-left: -16px; transform: translateY(-8px) rotate(-8deg); background: var(--bar); padding: 1px 5px; font: 500 10px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--bad); border: 1px solid var(--bad); border-radius: 4px; }
 .brandname { font-size: 34px; line-height: 1.1; }
 .menus { display: flex; gap: 2px; }
+/* the livery's name: reads as text, a thin outline when it can be renamed */
+.docname { width: 18ch; padding: 4px 8px; font: inherit; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 6px; text-overflow: ellipsis; }
+.docname:hover, .docname:focus { color: var(--fg); border-color: var(--line); outline: none; }
+body.workshop .docname { display: none; }
 .menu { position: relative; }
 .menu > button { padding: 5px 9px; }
 .menu > button:hover, .menu.open > button { background: var(--hover); }
@@ -302,8 +306,9 @@ dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; backgro
 dialog::backdrop { background: rgba(10, 14, 22, .45); }
 dialog h3 { margin: 0; padding: 14px 18px 4px; font-size: 15px; }
 dialog .dbody { padding: 6px 18px 4px; display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
-dialog .dbody label { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 10px; }
-dialog .dbody label > span { color: var(--muted); }
+dialog .dbody label, dialog .dbody .drow { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 10px; }
+dialog .dbody label > span, dialog .dbody .drow > span { color: var(--muted); }
+dialog .dbody .drow .pair b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 dialog .dbody label.check { grid-template-columns: auto 1fr; }
 dialog .dbody label.check input { accent-color: var(--accent); width: 16px; height: 16px; }
 dialog table { width: 100%; border-collapse: collapse; }

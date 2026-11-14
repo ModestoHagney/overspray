@@ -181,7 +181,7 @@ export function initUI(app, actions, version) {
   ];
   const menuDefs = () => ({
     File: [
-      ['New', '', 'newLivery', { tip: 'Start an empty livery' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Keep this livery in this browser' }], 0,
+      ['New', '', 'newLivery', { tip: 'Start an empty livery. The one open now stays in Open…' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Every change is kept in this browser by itself, under the name at the top. This saves it right now' }], 0,
       ['Open Overspray livery…', '', 'pickLivery', { tip: 'An .overspray file: a livery exported from Overspray on this or another computer' }],
       ['Export Overspray livery', '', 'exportLivery', { tip: 'Download this livery as one .overspray file, every layer and spec area in it, to keep or open elsewhere' }], 0,
       ['Open blank template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
@@ -235,6 +235,9 @@ export function initUI(app, actions, version) {
   // ---------- the strip, modes, hint ----------
   function drawChrome() {
     drawMenus();
+    const nm = $('doc-name');
+    nm.hidden = !app.projectId;
+    if (document.activeElement !== nm) nm.value = app.doc.name || '';
     const bare = !app.doc.template;
     $('modes').innerHTML = [['map', 'Map', bare ? NEEDS : 'Map: which panel is which, their twins and where they meet. Mirrored uses it'], ['paint', 'Paint', 'Paint: shapes, text and logos'], ['finish', 'Spec', 'Spec map: Gloss, Matte, Chrome']].map(([id, name, tip]) =>
       `<button data-mode="${id}"${tip ? ` title="${tip}"` : ''}${bare && id === 'map' ? ' disabled' : ''} aria-pressed="${app.mode === id}">${name}</button>`).join('');
@@ -1023,8 +1026,20 @@ export function initUI(app, actions, version) {
       (cur.cars.length ? `<label><span>Car folder</span><select id="cs-car">${opt('', 'Choose…', !cur.cars.includes(cur.car))}` +
         (cur.near.length ? `<optgroup label="Closest to this livery's name">${cur.near.map((c) => opt(c, c, false)).join('')}</optgroup><optgroup label="All">` : '') +
         cur.cars.map((c) => opt(c, c, c === cur.car)).join('') + (cur.near.length ? '</optgroup>' : '') + '</select></label>' : '') +
-      `<div class="note">${!cur.folder ? 'No iRacing paints folder linked yet.' : cur.cars.length ? 'Folder linked: ' + esc(cur.folder) : `No car folders found in ${esc(cur.folder)}. Link the iRacing paints folder itself.`}</div>`;
-    if (!await ask({ title: 'Car setup', body, ok: 'Save' })) return null;
+      `<div class="note">${!cur.folder ? 'No iRacing paints folder linked yet.' : cur.cars.length ? 'Folder linked: ' + esc(cur.folder) : `No car folders found in ${esc(cur.folder)}. Link the iRacing paints folder itself.`}</div>` +
+      `<div class="drow" title="Each livery is also kept in this folder as an .overspray file, updated every minute while you work. Optional"><span>Backup folder</span><span class="pair" id="cs-bk"></span></div>`;
+    const p = ask({ title: 'Car setup', body, ok: 'Save' });
+    // the backup folder's row: each button works straight away, from its own click (the browser asks for that)
+    const bk = $('cs-bk'), b = cur.backup;
+    const row = (st) => {
+      const btn = (id, label, title = '') => `<button type="button" class="btn" data-bk="${id}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+      bk.innerHTML = !b.can() ? '<span class="note">Needs Chrome or Edge</span>'
+        : !st ? btn('pick', 'Choose…')
+        : `<b title="${esc(st.name)}">${esc(st.name)}</b>` + (st.paused ? btn('allow', 'Allow', 'The browser wants a click before it lets the page write there again') : '') + btn('pick', 'Change…') + btn('stop', 'Stop', 'No more backups. The files already there stay');
+    };
+    bk.onclick = async (e) => { const t = e.target.closest('[data-bk]'); if (t) row(await b[t.dataset.bk]()); };
+    row(await b.now());
+    if (!await p) return null;
     return { custid: $('cs-id').value, target: $('cs-target').value, customNumber: $('cs-num').checked, car: $('cs-car') ? $('cs-car').value : null };
   }
   async function editColour(c) {
