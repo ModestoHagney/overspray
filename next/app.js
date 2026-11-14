@@ -563,7 +563,7 @@ async function backup() {
       let json = await persist.loadProject(p.id);
       if (!json) continue;
       if (typeof json !== 'string') json = JSON.stringify(json);
-      await persist.writeFileToFolder(dir, (p.name || 'livery').replace(/[^\w.-]+/g, '_') + '.overspray', new Blob([json], { type: 'application/json' }));
+      await persist.writeFileToFolder(dir, fileName(p.name) + '.overspray', new Blob([json], { type: 'application/json' }));
       done[p.id] = p.updatedAt || Date.now();
       await persist.saveSetting('backedUp', done);
     }
@@ -572,10 +572,13 @@ async function backup() {
 setInterval(backup, 60000);
 const freshId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6); // a livery's id, never the same in two tabs
 // the car's name, or "Toyota Camry 2" when another livery already has it
+// (compared as backup file names: "GR86", "gr86" and "GR 86" would share one file)
+const fileName = (name) => (name || 'livery').replace(/[^\w.-]+/g, '_');
 async function freeName(base) {
-  const taken = new Set((await persist.listProjects().catch(() => [])).filter(p => p.id !== app.projectId).map(p => p.name));
+  const key = (n) => fileName(n).toLowerCase();
+  const taken = new Set((await persist.listProjects().catch(() => [])).filter(p => p.id !== app.projectId).map(p => key(p.name)));
   let name = base, n = 1;
-  while (taken.has(name)) name = `${base} ${++n}`;
+  while (taken.has(key(name))) name = `${base} ${++n}`;
   return name;
 }
 // A map and a template "fit" when nearly all their traced panels line up
@@ -1056,11 +1059,14 @@ const actions = {
     else ui.say(app.projectId ? `Saved ${app.doc.name}` : 'Nothing to save yet: open a blank template to start');
     ui.refreshChrome();
   },
-  rename(name) {
+  // a name another livery has gets a number, as a new one does: each has its own backup file
+  async rename(name) {
     name = (name || '').trim().slice(0, 60);
     if (!name || name === app.doc.name) return ui.refreshChrome();
-    app.doc.name = name;
+    const free = await freeName(name);
+    app.doc.name = free;
     change({ now: true });
+    if (free !== name) ui.say(`The name ${name} is already taken, so this one is ${free}`);
   },
 
   pickTemplate: () => $('file-template').click(),
