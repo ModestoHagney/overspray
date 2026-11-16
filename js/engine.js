@@ -153,6 +153,7 @@ export function createDoc() {
     layers: [],                 // bottom → top: shapes (fills), text and pictures
     groups: [],                 // flat layer groups: { id, name, collapsed, turn }; members carry layer.groupId; turn: the angle its box stands at, in degrees
     template: null,             // { img, src }: the car's template, shown on screen, never painted
+    kit: null,                  // the template's own decals and boxes to look at: { sets: [{ name, src, x, y, w, h }], boxes: { src, x, y, w, h } | null } (see template.js kitOf)
     customFonts: [],            // fonts the user added, { name, data (base64) }, saved with the livery
     googleFonts: [],            // names of Google fonts added by name, beyond the built-in list
     finishRules: [],            // { color, material, params? }: every shape or text of that colour gets that finish (see finish.js)
@@ -1109,6 +1110,7 @@ export function serializeDoc(doc) {
     name: doc.name, target: doc.target, customNumber: !!doc.customNumber, car: doc.car || null,
     baseColor: doc.baseColor, baseMaterial: doc.baseMaterial, baseMatParams: doc.baseMatParams || null,
     template: doc.template ? doc.template.src : null,
+    kit: doc.kit || null,
     customFonts: (doc.customFonts || []).map(({ name, data }) => ({ name, data })),
     regionMap: doc.regionMap || null,
     palette: cleanPalette(doc.palette),
@@ -1275,6 +1277,15 @@ export async function deserializeDoc(data) {
   });
   // decoded only when its lines are drawn, and let go again after (app.js templateLines)
   if (typeof data.template === 'string' && data.template) doc.template = { img: null, src: data.template };
+  // the kit's decals and boxes: pictures (PNG data URLs) and where they sit; a broken one is left out
+  const kitPic = (p) => (p && typeof p.src === 'string' && p.src.startsWith('data:image/png') && [p.x, p.y, p.w, p.h].every(v => Number.isFinite(v))
+    ? { src: p.src, x: p.x, y: p.y, w: p.w, h: p.h } : null);
+  if (data.kit && typeof data.kit === 'object') {
+    const sets = (Array.isArray(data.kit.sets) ? data.kit.sets : []).slice(0, 40)
+      .map(p => { const k = kitPic(p); return k && { name: typeof p.name === 'string' && p.name ? p.name.slice(0, 60) : 'Decals', ...k }; }).filter(Boolean);
+    const boxes = kitPic(data.kit.boxes);
+    if (sets.length || boxes) doc.kit = { sets, boxes };
+  }
   try {
     if (data.regionMap) doc.regionMap = parseRegionMap(data.regionMap);
   } catch { /* a broken map is dropped */ }

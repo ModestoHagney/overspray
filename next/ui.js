@@ -156,6 +156,7 @@ export function initUI(app, actions, version) {
   });
 
   // ---------- menus ----------
+  const SIM_TIP = 'It shows in the sim while Live is on (Live comes on with it); saves and exports leave it out';
   // [label, shortcut, action, { off, tick, tip }]
   const hasLayer = () => app.sel !== null && app.sel !== 'base' && !actions.swatchAt(app.sel);
   // what can be done to the selected shapes as shapes, and whether each applies now
@@ -206,13 +207,18 @@ export function initUI(app, actions, version) {
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
       ['Map on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }],
-      ['Panel colours on car', '1', 'carPart:carColours', { tick: actions.carOn('carColours'), needs: 1, tip: 'Paints each panel\'s colour and name onto the car, so you can see which panel is which in the sim. Switch off before your real save' }],
-      ['Linked edges on car', '2', 'carPart:carLinks', { tick: actions.carOn('carLinks'), needs: 1, tip: 'Paints the linked edges onto the car, so you can check they meet in the sim. Switch off before your real save' }],
-      ['Centrelines on car', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. Switch off before your real save' }], 0,
+      ['Panel colours on car', '1', 'carPart:carColours', { tick: actions.carOn('carColours'), needs: 1, tip: 'Paints each panel\'s colour and name onto the car, so you can see which panel is which in the sim. ' + SIM_TIP }],
+      ['Linked edges on car', '2', 'carPart:carLinks', { tick: actions.carOn('carLinks'), needs: 1, tip: 'Paints the linked edges onto the car, so you can check they meet in the sim. ' + SIM_TIP }],
+      ['Centrelines on car', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. ' + SIM_TIP }], 0,
       ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
       ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
-      ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. Switch it off before your real save' }],
+      ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. ' + SIM_TIP }],
       ...(app.zonesAsk ? [['Submit exclusion zone…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []), 0,
+      ['Kit decals', '', 'show:kitDecals', { tick: app.show.kitDecals, needs: 1, off: !actions.kitSets(), tip: 'Shows the decals the car\'s template has of its own, over your paint. Only a view: never painted' }],
+      ...(actions.kitSets() > 1 ? [['Kit decal set…', '', 'pickKitSet', { needs: 1, tip: 'Pick which of the template\'s decal sets to show: the base decals, or another series\' set the template keeps hidden' }]] : []),
+      ['Kit decals on car', '', 'toggleKitOnCar', { tick: actions.kitOnCar('decals'), needs: 1, off: !actions.kitSets(), tip: `Paints the kit decal set on show onto the car, so you can see it in the sim. ${SIM_TIP}` }],
+      ['Number and sponsor boxes', '', 'show:kitBoxes', { tick: app.show.kitBoxes, needs: 1, off: !actions.hasBoxes(), tip: 'Shows where the template says the number and sponsor decals go' }],
+      ['Number and sponsor boxes on car', '', 'toggleBoxesOnCar', { tick: actions.kitOnCar('boxes'), needs: 1, off: !actions.hasBoxes(), tip: `Paints the number and sponsor boxes onto the car, so you can see them in the sim. ${SIM_TIP}` }], 0,
       ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],

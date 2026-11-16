@@ -26,7 +26,7 @@ import { moved, joined, boxOutline, placed, pieces, SHAPES, hasInner, outerOnly,
 import { searchIcons, iconShape, svgToShape } from './icons.js';
 import { traceImage, paintColours, specAreas, solidOutlines } from '../js/trace.js';
 import { finishSpec, finishList, withFinishes, setRule, clearRule, ruleFor, layerColour, layerColours, isArea, hasOwnFinish, readFinish, writeFinish, presetOf, FINISHES, SPARKLE, liverySparkle, oneSparkle } from '../js/finish.js';
-import { initMap, syncGuide, guideLayer, guideParts, pairList, setGuidePink } from './map.js';
+import { initMap, syncGuide, guideLayer, guideParts, pairList, setGuidePink, GUIDE } from './map.js';
 import { initCarGradient } from './cargrad.js';
 import { startTour } from './tour.js';
 import { mirrorLayer, mirrorImage, withMirrors, withSeams, seamsOf } from '../js/mirror.js';
@@ -50,7 +50,8 @@ export const app = {
   sels: [],                           // every selected layer's id when there are several (it includes sel)
   // the template's own linework already draws every piece's border, so the
   // computed piece outlines start off here; they are Map mode's to show
-  show: { layers: true, props: true, outlines: false, lines: true, mesh: true },
+  show: { layers: true, props: true, outlines: false, lines: true, mesh: true, kitDecals: false, kitBoxes: false },
+  kitSet: 0, // which of the kit's decal sets View › Kit decals shows (see kitSet())
   custid: '',
   live: false,
   liveBad: false,                     // the last live save failed
@@ -221,6 +222,15 @@ const withTints = (doc) => (doc.layers.some(l => l.type === 'image' && l.color &
   ? { ...doc, layers: doc.layers.map(l => (l.type === 'image' && l.color && l.img ? { ...l, img: tintedImage(l.img, l.color) } : l)) }
   : doc);
 const shown = () => withSeams(withMirrors(withTints(withFinishes(app.doc))));
+// The livery without the "on car" layers (the map, the exclusion zone, the kit's
+// decals and boxes): those go to the car only while Live is on, so a look in
+// the sim never ends up in a save or an export, and nothing has to be switched off first
+const carOnly = (l) => l.type === 'image' && (l.name === GUIDE || (l.locked && CAR_ONLY.includes(l.name)));
+const realShown = () => {
+  const d = app.doc;
+  return withSeams(withMirrors(withTints(withFinishes(d.layers.some(carOnly) ? { ...d, layers: d.layers.filter(l => !carOnly(l)) } : d))));
+};
+const realPaint = () => renderPaint(realShown(), { linearEdges: true });
 let quick = false, quickTimer = null; // an edit is in full flow: draw fast, tidy up when it pauses
 let dirty = true;       // the paint composite needs re-rendering
 let composite = null;
@@ -316,6 +326,14 @@ function draw() {
     ctx.strokeStyle = '#ff00cc';
     ctx.lineWidth = 1.5 / app.view.zoom;
     ctx.stroke(app.zone.path);
+  }
+  if (doc.kit) { // the kit's own decals and boxes, to look at only
+    const k = doc.kit, set = app.show.kitDecals && kitSet();
+    for (const [p, a] of [[app.show.kitBoxes && k.boxes, 0.6], [set, 1]]) {
+      const img = p && kitImg(p.src);
+      if (img) { ctx.globalAlpha = a; ctx.drawImage(img, p.x, p.y, p.w, p.h); }
+    }
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 
@@ -1081,6 +1099,8 @@ const actions = {
       const t = await loadTemplate(file, d.regionMap);
       d.template = t.template;
       d.regionMap = t.regionMap;
+      d.kit = t.kit;
+      app.kitSet = 0;
       // the template's extra colours; ones already set keep their colours
       app.board = null;
       d.swatches = t.swatches.map((p) => { const had = (d.swatches || []).find(o => o.name === p.name); return had ? { ...p, color: had.color, ref: had.ref, ...(had.clear && p.points ? { clear: true } : {}) } : { ...p, ref: null }; });
@@ -1156,7 +1176,7 @@ const actions = {
     if (!validCustid(app.custid) && !await actions.carSetup()) return false;
     if (!await persist.getPaintsFolder().catch(() => null) && !await actions.linkFolder()) return false;
     if (!await actions.findCar(null, true)) return false;
-    const res = await saveToIracing(shown(), app.custid);
+    const res = await saveToIracing(realShown(), app.custid); // Live sends the "on car" layers; a save never does
     if (res.ok) ui.say(res.backed ? `Saved ${res.paintName}. Your previous paint is kept in overspray-backup.` : `Saved ${res.paintName}`);
     else ui.say(res.error, true);
     return res.ok;
@@ -1165,9 +1185,12 @@ const actions = {
   async toggleLive() {
     if (app.live && !app.liveBad) {
       app.live = false;
+      // the car had the "on car" layers: it gets the livery without them again
+      if (app.doc.layers.some(carOnly)) saveToIracing(realShown(), app.custid, { quiet: true }).catch(() => {});
     } else if (await actions.saveIracing()) { // a real save first: it proves the folder and the number
       app.live = true;
       app.liveBad = false;
+      if (app.doc.layers.some(carOnly)) liveTick(); // and then what the car is to show
     } else {
       return;
     }
@@ -1177,12 +1200,12 @@ const actions = {
 
   exportTga() {
     const [paintName, specName] = paintFilenames(app.doc, validCustid(app.custid) ? app.custid : safeName());
-    download(canvasToTGA(exportPaintCanvas(app.doc, paint())), paintName); // a helmet at 1024, as Save to iRacing writes it
-    if (specName) download(canvasToTGA(renderSpec(shown()), { alpha: true }), specName);
+    download(canvasToTGA(exportPaintCanvas(app.doc, realPaint())), paintName); // a helmet at 1024, as Save to iRacing writes it
+    if (specName) download(canvasToTGA(renderSpec(realShown()), { alpha: true }), specName);
     ui.say(specName ? `${paintName} is the paint; ${specName} is the spec map` : `Exported ${paintName}`);
   },
   exportPng() {
-    paint().toBlob((b) => { if (b) download(b, safeName() + '.png'); }, 'image/png');
+    realPaint().toBlob((b) => { if (b) download(b, safeName() + '.png'); }, 'image/png');
   },
   // the picked layers alone, as they are painted, over a clear sheet the size of the paint
   exportLayerPng() {
@@ -1200,7 +1223,7 @@ const actions = {
   // here and says why, since the new tab would hide the message.
   async sendTp() {
     const name = safeName() + '.png'; // Trading Paints takes any file name (the .mip too); the upload page asks for the car and number
-    const blob = await new Promise(done => exportPaintCanvas(app.doc, paint()).toBlob(done, 'image/png'));
+    const blob = await new Promise(done => exportPaintCanvas(app.doc, realPaint()).toBlob(done, 'image/png'));
     if (!blob) { ui.say('The paint could not be exported', true); return; }
     download(blob, name);
     let why = null;
@@ -1507,7 +1530,8 @@ const actions = {
     Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
     await syncGuide(app.doc, on);
     change({ now: true });
-    ui.say(on ? 'The map is on the car. Switch it off before your real save.' : 'The map is off the car');
+    if (!on) ui.say('The map is off the car');
+    else if (await liveForCar()) ui.say(`The map is on the car${ON_CAR}`);
   },
   guideOn: () => !!guideLayer(app.doc),
   carOn: (k) => !!guideLayer(app.doc) && app.mapShow[k],
@@ -1609,9 +1633,39 @@ const actions = {
     l.locked = true; // sheet-sized: it must never be grabbed by a click
     app.doc.layers.push(l);
     change({ now: true });
-    ui.say('Exclusion zone is on the car. Switch this off before your real save.');
+    if (await liveForCar()) ui.say(`Exclusion zone is on the car${ON_CAR}`);
   },
   zoneOnCar: () => !!zoneLayer(),
+
+  // ---- the kit's own decals and boxes (from the template PSD, kept with the livery)
+  kitSets: () => ((app.doc.kit && app.doc.kit.sets) || []).length,
+  hasBoxes: () => !!(app.doc.kit && app.doc.kit.boxes),
+  async pickKitSet() {
+    const sets = (app.doc.kit && app.doc.kit.sets) || [], now = kitSet();
+    const id = await ui.pickList({ title: 'Kit decals: pick a set', empty: 'This template has no decals of its own.',
+      items: sets.map((s, i) => ({ id: String(i), name: s.name, note: s === now ? 'Showing now' : '' })) });
+    if (id === null || id === undefined) return;
+    app.kitSet = +id;
+    app.show.kitDecals = true;
+    const old = carLayer(KIT_LAYER);
+    if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); await actions.toggleKitOnCar(KIT_LAYER, true); } // the car shows the new set too
+    requestDraw(); ui.refresh();
+  },
+  // the kit decal set on show, or the boxes, painted onto the car as a locked
+  // layer on top, as Exclusion zone on car does; quietly: only swapping it for another set
+  async toggleKitOnCar(name = KIT_LAYER, quietly = false) {
+    const old = carLayer(name);
+    if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); change({ now: true }); ui.say(`${name} off the car`); return; }
+    const p = name === KIT_LAYER ? kitSet() : app.doc.kit && app.doc.kit.boxes;
+    if (!p) { ui.say(app.doc.template ? 'This template has none: they come from the car\'s template PSD' : 'Open the car\'s blank template (PSD) first: these come from it', true); return; }
+    const l = createImageLayer(await loadImage(p.src), p.src, name);
+    Object.assign(l, { scale: p.w / l.img.width, x: p.x + p.w / 2, y: p.y + p.h / 2, locked: true });
+    app.doc.layers.push(l);
+    change({ now: true });
+    if (await liveForCar() && !quietly) ui.say(`${name} on the car${ON_CAR}`);
+  },
+  kitOnCar: (which) => !!carLayer(which === 'boxes' ? BOXES_LAYER : KIT_LAYER),
+  toggleBoxesOnCar: () => actions.toggleKitOnCar(BOXES_LAYER),
   // the picked layers, as they are painted, made into this car's exclusion zone (only with ?zones):
   // everything they cover is in, whatever its colour or how see-through
   makeZone() {
@@ -3237,4 +3291,23 @@ async function zonePicture(zones, size, withTemplate) {
   return c;
 }
 const ZONE_LAYER = 'Exclusion zone'; // the layer that puts the zone on the car
+const KIT_LAYER = 'Kit decals', BOXES_LAYER = 'Number and sponsor boxes'; // the layers that put the kit's decals, and its boxes, on the car
+const CAR_ONLY = [ZONE_LAYER, KIT_LAYER, BOXES_LAYER];
+const ON_CAR = '. It shows in the sim while Live is on; saves and exports leave it out.';
+const carLayer = (name) => app.doc.layers.find(l => l.type === 'image' && l.locked && l.name === name) || null;
+// an "on car" layer reaches the car only through Live: it is turned on (a click, so the folder can be asked for)
+// → whether Live is on now (when it could not be, the reason has been said)
+async function liveForCar() { if (!app.live || app.liveBad) await actions.toggleLive(); return app.live && !app.liveBad; }
+// the kit decal set on show: the one picked, else the first
+const kitSet = () => { const s = (app.doc.kit && app.doc.kit.sets) || []; return s[app.kitSet] || s[0] || null; };
+// a kit picture, once decoded (a redraw follows when it is)
+const kitImgs = new Map();
+function kitImg(src) {
+  const had = kitImgs.get(src);
+  if (had) return had === 'loading' ? null : had;
+  if (kitImgs.size > 4) kitImgs.clear(); // ponytail: only the few on show are kept; another template's are let go
+  kitImgs.set(src, 'loading');
+  loadImage(src).then((img) => { kitImgs.set(src, img); requestDraw(); }, () => kitImgs.delete(src));
+  return null;
+}
 function zoneLayer() { return app.doc.layers.find(l => l.type === 'image' && l.locked && l.name === ZONE_LAYER) || null; }
