@@ -4,7 +4,7 @@
 //
 // (It began as the page-free half of the original screen's template handler.)
 
-import { loadImage } from './engine.js';
+import { loadImage, SIZE } from './engine.js';
 import { psdToTemplate, xcfToTemplate } from './psd.js';
 import { createRegionMap, piecesRegionMap, uniqueRegionId, mapFit } from './regions.js';
 import { zonesToRegions, inferDecalPairs, applyOrientation } from './zones.js';
@@ -82,16 +82,41 @@ const fileToDataURL = (file) => new Promise((resolve, reject) => {
   r.readAsDataURL(file);
 });
 
+// A kit picture as kept in the livery: cut to what is drawn on it and brought
+// to sheet size, as a PNG with where it sits → { src, x, y, w, h }, or null
+// when nothing is drawn
+function kitPicture(c) {
+  const k = SIZE / c.width, px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+  let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+    if (px[(y * c.width + x) * 4 + 3] < 8) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return null;
+  const x = Math.floor(x0 * k), y = Math.floor(y0 * k), w = Math.ceil((x1 + 1) * k) - x, h = Math.ceil((y1 + 1) * k) - y;
+  const out = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  out.getContext('2d').drawImage(c, x0, y0, x1 + 1 - x0, y1 + 1 - y0, 0, 0, w, h);
+  return { src: out.toDataURL('image/png'), x, y, w, h };
+}
+// the template's kit decals and boxes as the livery keeps them (see psd.js
+// extractKit) → { sets: [{ name, src, x, y, w, h }], boxes } or null
+function kitOf(kit) {
+  if (!kit) return null;
+  const sets = kit.sets.map(s => { const p = kitPicture(s.canvas); return p && { name: s.name.slice(0, 60), ...p }; }).filter(Boolean);
+  const boxes = kit.boxes ? kitPicture(kit.boxes) : null;
+  return sets.length || boxes ? { sets, boxes } : null;
+}
+
 // file: a template PSD or GIMP file (pieces and zones are read from it) or a plain
 // picture (linework only). map: the doc's current region map, or null.
 // fit: how well the map already there matches this template's panels (see
 // mapFit), or null when there was nothing to compare
-// → { template: { img, src }, regionMap, pieces, zones, carName, fit, swatches }
+// → { template: { img, src }, regionMap, pieces, zones, carName, fit, swatches, kit (see kitOf) }
 export async function loadTemplate(file, map = null) {
   const carName = file.name.replace(/\.[^.]+$/, '');
   if (!/\.(psd|xcf)$/i.test(file.name)) {
     const src = await fileToDataURL(file);
-    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null, swatches: [] };
+    return { template: { img: await loadImage(src), src }, regionMap: map, pieces: 0, zones: 0, carName, fit: null, swatches: [], kit: null };
   }
   const xcf = /\.xcf$/i.test(file.name);
   if (!xcf) await ensurePsdReader();
@@ -105,6 +130,6 @@ export async function loadTemplate(file, map = null) {
   const src = res.wire ? linesPicture(res.wire) : res.src;
   return {
     template: { img: await loadImage(src), src },
-    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName, fit, swatches: res.swatches || [],
+    regionMap: merged.map, pieces: merged.pieces, zones: merged.zones, carName, fit, swatches: res.swatches || [], kit: kitOf(res.kit),
   };
 }

@@ -165,3 +165,12 @@ test('readPalettes: fonts travel with a palette, cleaned, and a fonts-only palet
   assert.equal('fonts' in readPalettes({ colors: ['#ff0000'], fonts: { google: [] } })[0], false); // none: left out
   assert.equal(readPalettes({ name: 'Just fonts', colors: [], fonts: { google: ['Oswald'] } }).length, 1);
 });
+
+test('the kit\'s decal sets and boxes come back from a save, broken ones left out', async () => {
+  const doc = createDoc();
+  const pic = { src: 'data:image/png;base64,x', x: 10, y: 20, w: 30, h: 40 };
+  doc.kit = { sets: [{ name: 'Base decals', ...pic }, { name: 'IMSA Car_decal', ...pic, src: 'https://evil.example/x.png' }], boxes: pic };
+  const back = await saveAndLoad(doc);
+  assert.deepEqual(back.kit, { sets: [{ name: 'Base decals', ...pic }], boxes: pic });
+  assert.equal((await saveAndLoad(createDoc())).kit, null);
+});

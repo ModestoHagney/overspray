@@ -62,6 +62,12 @@ body.workshop .docname { display: none; }
 .drop kbd { font: 11px var(--mono); color: var(--muted); }
 .drop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 0; }
 .drop .tick::after { content: "✓"; width: 14px; text-align: right; color: var(--accent); }
+.submenu { position: relative; }
+.submenu > .drop { display: none; top: -6px; left: calc(100% + 2px); }
+.submenu.flip > .drop { left: auto; right: calc(100% + 2px); }
+.submenu:hover > .drop, .submenu:focus-within > .drop { display: block; }
+.submenu:hover > .subhead, .submenu:focus-within > .subhead { background: var(--hover); }
+.subhead kbd { font: 13px var(--ui); }
 .modes { display: flex; padding: 2px; background: var(--hover); border-radius: 8px; margin-inline: auto; }
 .modes button { padding: 4px 16px; font-weight: 500; color: var(--muted); }
 .modes button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); box-shadow: 0 1px 3px var(--shade); }

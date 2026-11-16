@@ -162,6 +162,22 @@ function extractDecals(entries, w, h) {
   const shown = entries.filter(e => !e.hidden && DECAL_RE.test(e.layer.name || '') && !zoneKind(e.layer.name || ''));
   return shown.length ? stack(shown.map(e => e.layer), w, h) : null;
 }
+// The kit's decals to look at (View › Kit decals): the ones showing as the
+// base set, then each turned-off decal layer as a set of its own (another
+// series' decals: "IMSA Car_decal", "Car_decal Dirtcar", "Official Ferrari
+// Numberboards", "IMSA Leaderboard Blocks"); and the sponsor and number boxes
+// as drawn. → { sets: [{ name, canvas }], boxes: canvas or null }
+const SET_RE = /leaderboard|official/i;
+function extractKit(entries, w, h, base) {
+  const sets = base ? [{ name: 'Base decals', canvas: base }] : [];
+  for (const e of entries) {
+    const name = (e.layer.name || '').trim();
+    if (!e.hidden || !(DECAL_RE.test(name) || SET_RE.test(name)) || zoneKind(name) || sets.some(s => s.name === name)) continue;
+    sets.push({ name, canvas: stack([e.layer], w, h) });
+  }
+  const boxes = entries.filter(e => zoneKind(e.layer.name || '')).map(e => e.layer);
+  return { sets, boxes: boxes.length ? stack(boxes, w, h) : null };
+}
 
 // A template file → {
 //   src: the wireframe on white as a PNG data URL (the whole picture when no
@@ -171,7 +187,8 @@ function extractDecals(entries, w, h) {
 //   zones: [{ kind: 'sponsor' | 'number', x, y, w, h }] ([] without block layers),
 //   decals: the stock decals on a canvas, to read which way panels face (or null),
 //   swatches: [{ name, x, y, w, h, color, points? }]: the car's extra colour
-//     squares, and the pitboard by its outline ([] when the kit has none) }
+//     squares, and the pitboard by its outline ([] when the kit has none),
+//   kit: { sets, boxes }: the kit's decals and boxes to look at (see extractKit) }
 export async function psdToTemplate(arrayBuffer) {
   return templateOf((await psdReader()).readPsd(arrayBuffer));
 }
@@ -180,7 +197,7 @@ export async function psdToTemplate(arrayBuffer) {
 export async function xcfToTemplate(buf) {
   const wire = hasWire((await readXcf(buf, { keep: () => false })).children);
   // a layer small enough to hold only colour squares is read too (see extractSwatches)
-  const used = (x) => WIRE_RE.test(x.name) || zoneKind(x.name) || /pit\s*box|pit\s*board|name\s*plate/i.test(x.name) || DECAL_RE.test(x.name) || (!x.hidden && x.w * x.h <= 512 * 512);
+  const used = (x) => WIRE_RE.test(x.name) || zoneKind(x.name) || /pit\s*box|pit\s*board|name\s*plate/i.test(x.name) || DECAL_RE.test(x.name) || SET_RE.test(x.name) || (!x.hidden && x.w * x.h <= 512 * 512);
   return templateOf(withCanvases(await readXcf(buf, { keep: (n, up) => {
     const all = [n, ...up];
     return !all.some(x => PATTERN_RE.test(x.name)) && (wire ? all.some(used) : !all.some(x => x.hidden));
@@ -196,9 +213,10 @@ function templateOf(psd) {
   const wires = named.filter(e => e.wire);
   // the helper layers are looked for without the name skip, which would drop "Color Change Logos"
   const every = flatLayers(psd.children, false);
-  let extras = { zones: [], decals: null, swatches: [] };
+  let extras = { zones: [], decals: null, swatches: [], kit: null };
   try {
-    extras = { zones: extractZones(every, w, h), decals: extractDecals(every, w, h), swatches: extractSwatches(every, w, h) };
+    const decals = extractDecals(every, w, h);
+    extras = { zones: extractZones(every, w, h), decals, swatches: extractSwatches(every, w, h), kit: extractKit(every, w, h, decals) };
   } catch { /* extras only: the template opens without them */ }
   const png = () => sheet.toDataURL('image/png');
   if (wires.length) {
