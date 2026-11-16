@@ -37,7 +37,7 @@ const TUTORIALS = {
       { at: () => document.querySelector('[data-mode="paint"]'), text: '<b>Paint tab.</b> Where you paint: colours, shapes, text and logos.' },
       { at: () => document.querySelector('[data-mode="finish"]'), text: '<b>Spec tab.</b> The spec map: which parts are gloss, matte or chrome.' },
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : document.querySelector('#menus button')),
-        text: '<b>Open blank template…</b> Pick your car\'s template. No template yet? <a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Download one from Trading Paints</a>, then come back here.',
+        text: '<b>Open blank template…</b> (File › Template) Pick your car\'s template. No template yet? <a href="https://www.tradingpaints.com/cartemplates" target="_blank" rel="noopener">Download one from Trading Paints</a>, then come back here.',
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => $('btn-live'),
         text: '<b>Live.</b> Press it. It asks for your iRacing customer ID: in iRacing, click your name or helmet in the top right, then the copy button beside your ID. Then pick your paints folder: Documents › iRacing › paints.',
@@ -74,12 +74,12 @@ const TUTORIALS = {
     let layers = 0;
     return [
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : q('#menus button')),
-        text: '<b>Open blank template…</b> The map is made from your car\'s template, so open it first.',
+        text: '<b>Open blank template…</b> (File › Template) The map is made from your car\'s template, so open it first.',
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: () => q('[data-mode="map"]'), text: '<b>Map tab.</b> Where you tell Overspray how the panels fit together on the car.', done: () => app.mode === 'map' },
       { at: () => q('[data-act="browseMaps"]'), start: toMap, text: '<b>Browse maps…</b> Someone may have mapped this car already. Look here first: if there is one, load it and you are done.' },
       { at: () => { const a = q('label:has(#m-colours)'), b = q('label:has(#m-centres)'); if (!seen(a) || !seen(b)) return a; const r = document.createRange(); r.setStartBefore(a); r.setEndAfter(b); return r; }, // the three switches as one spot
-        start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. <b>Linked edges</b> and <b>Centrelines</b> show those too. <b>View › Map on car</b> (C) puts them on the car, so you can tell which panel is which. Keys 1, 2 and 3 switch Panel colours on car, Linked edges on car and Centrelines on car one at a time.' },
+        start: toMap, text: '<b>Panel colours.</b> Each panel in its own colour on the sheet. <b>Linked edges</b> and <b>Centrelines</b> show those too. <b>View › On car › Map</b> (C) puts them on the car, so you can tell which panel is which. Keys 1, 2 and 3 switch Panel colours, Linked edges and Centrelines on the car one at a time.' },
       { at: tool('mpair'), start: toMap, text: '<b>Pair panels.</b> Click a panel, then its twin on the other side of the car. Mirrored paints both.' },
       { at: tool('mcentre'), start: toMap, text: '<b>Centreline.</b> For a panel that crosses the middle, like the bonnet or roof. Click two matching corners, one each side.' },
       { at: tool('mlink'), start: toMap, text: '<b>Link edges.</b> Where two panels meet on the car, so paint carries across. Click an edge, then the edge it meets on the other panel. Drag an end to fine-tune it.' },
@@ -95,7 +95,7 @@ const TUTORIALS = {
     let lines = 0;
     return [
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : q('#menus button')),
-        text: '<b>Open blank template…</b> A car gradient is laid out on the car\'s panels, so open its template first.',
+        text: '<b>Open blank template…</b> (File › Template) A car gradient is laid out on the car\'s panels, so open its template first.',
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
       { at: tool('cargrad'), start: toPaint, text: '<b>Car gradient.</b> One fade along the whole car, the same on both sides. Click it: it adds a car gradient layer and opens its window.', done: () => !!win() },
       { at: () => q('.cgwin .cg-strip'), text: '<b>The strip</b> stands for the car, front to back. Each panel takes the colours of its own stretch of it.' },

@@ -167,12 +167,12 @@ export function initUI(app, actions, version) {
   };
   const shapeItems = () => {
     const can = shapeCan();
-    return [['Merge', 'Ctrl+E', 'merge', { off: !can.merge }], ['Wrap', '', 'wrap', { off: !can.wrap }], ['Split', '', 'split', { off: !can.split }], ['Fill in', '', 'fillIn', { off: !can.fillIn }]];
+    return [['Shape', '', '', { sub: [['Merge', 'Ctrl+E', 'merge', { off: !can.merge }], ['Wrap', '', 'wrap', { off: !can.wrap }], ['Split', '', 'split', { off: !can.split }], ['Fill in', '', 'fillIn', { off: !can.fillIn }]] }]];
   };
   const layerItems = () => [
     ['Copy', 'Ctrl+C', 'copy', { off: !hasLayer() }], ['Paste', 'Ctrl+V', 'paste', { off: !app.clipboard }], ['Duplicate', 'Ctrl+D', 'duplicate', { off: !hasLayer() }], 0,
-    ['Bring to front', 'Ctrl+Shift+]', 'front', { off: !hasLayer() }], ['Bring forward', 'Ctrl+]', 'forward', { off: !hasLayer() }],
-    ['Send backward', 'Ctrl+[', 'backward', { off: !hasLayer() }], ['Send to back', 'Ctrl+Shift+[', 'back', { off: !hasLayer() }], 0,
+    ['Arrange', '', '', { sub: [['Bring to front', 'Ctrl+Shift+]', 'front', { off: !hasLayer() }], ['Bring forward', 'Ctrl+]', 'forward', { off: !hasLayer() }],
+      ['Send backward', 'Ctrl+[', 'backward', { off: !hasLayer() }], ['Send to back', 'Ctrl+Shift+[', 'back', { off: !hasLayer() }]] }], 0,
     ['Save to library', '', 'saveShape', { off: (actions.selected() || {}).type !== 'fill' && actions.selectedLayers().length < 2 }],
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
     ...(app.zonesAsk ? [['Make exclusion zone', '', 'makeZone', { off: !hasLayer(), tip: 'Everything this layer covers becomes the exclusion zone for this car' }]] : []),
@@ -182,20 +182,30 @@ export function initUI(app, actions, version) {
   ];
   const menuDefs = () => ({
     File: [
-      ['New', '', 'newLivery', { tip: 'Start an empty livery. The one open now stays in Open…' }], ['Open…', '', 'open', { tip: 'A livery you saved in this browser' }], ['Save', 'Ctrl+S', 'save', { tip: 'Every change is kept in this browser by itself, under the name at the top. This saves it right now' }], 0,
-      ['Open Overspray livery…', '', 'pickLivery', { tip: 'An .overspray file: a livery exported from Overspray on this or another computer' }],
-      ['Export Overspray livery', '', 'exportLivery', { tip: 'Download this livery as one .overspray file, every layer and spec area in it, to keep or open elsewhere' }], 0,
-      ['Open blank template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
-      ['Get a template…', '', 'getTemplate', { tip: "Where to download your car's template" }],
-      ['Import paint file…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }], 0,
+      ['New', '', 'newLivery', { tip: 'Start an empty livery. The one open now stays in Open › Saved livery…' }],
+      ['Open', '', '', { sub: [
+        ['Saved livery…', '', 'open', { tip: 'A livery you saved in this browser' }],
+        ['Overspray livery file…', '', 'pickLivery', { tip: 'An .overspray file: a livery exported from Overspray on this or another computer' }],
+        ['Paint file…', '', 'pickPaint', { tip: 'A paint you already have (TGA, PNG, PSD or XCF), to change it here' }],
+      ] }],
+      ['Save', 'Ctrl+S', 'save', { tip: 'Every change is kept in this browser by itself, under the name at the top. This saves it right now' }], 0,
+      ['Template', '', '', { sub: [
+        ['Open blank template…', '', 'pickTemplate', { tip: "The car's template from Trading Paints (PSD is best): its panels and lines" }],
+        ['Get a template…', '', 'getTemplate', { tip: "Where to download your car's template" }],
+      ] }],
       ['Car setup…', '', 'carSetup', { tip: 'Your iRacing customer number and which car this is, for the paint file names' }],
-      ['Livery colours…', '', 'liveryColours', { tip: 'Every colour in this livery, to change them in one go' }],
-      ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }], 0,
+      ['Colours', '', '', { sub: [
+        ['Livery colours…', '', 'liveryColours', { tip: 'Every colour in this livery, to change them in one go' }],
+        ['Palettes…', '', 'openPalettes', { tip: 'Named colour sets you can keep and use again' }],
+      ] }], 0,
       ['Link iRacing paints folder…', '', 'linkFolder', { tip: 'Documents\\iRacing\\paints, so Save to iRacing and Live can write there' }],
       ['Save to iRacing', '', 'saveIracing', { tip: 'Writes the paint and spec map into the linked folder; iRacing shows it on the car' }],
       ['Send to Trading Paints', '', 'sendTp', { tip: 'Upload it to Trading Paints so other drivers see it' }], 0,
-      ['Export TGA', '', 'exportTga', { tip: 'Download the paint as a TGA file, to copy into iRacing yourself' }],
-      ['Export PNG', '', 'exportPng', { tip: 'Download the paint as a picture' }],
+      ['Export', '', '', { sub: [
+        ['TGA', '', 'exportTga', { tip: 'Download the paint as a TGA file, to copy into iRacing yourself' }],
+        ['PNG', '', 'exportPng', { tip: 'Download the paint as a picture' }],
+        ['Overspray livery', '', 'exportLivery', { tip: 'Download this livery as one .overspray file, every layer and spec area in it, to keep or open elsewhere' }],
+      ] }],
     ],
     Edit: [
       ['Undo', 'Ctrl+Z', 'undo', { off: !app.canUndo }], ['Redo', 'Ctrl+Y', 'redo', { off: !app.canRedo }], 0,
@@ -206,27 +216,36 @@ export function initUI(app, actions, version) {
     ],
     View: [
       ['Layers', '', 'show:layers', { tick: app.show.layers }], ['Properties', '', 'show:props', { tick: app.show.props }], 0,
-      ['Map on car', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1 }],
-      ['Panel colours on car', '1', 'carPart:carColours', { tick: actions.carOn('carColours'), needs: 1, tip: 'Paints each panel\'s colour and name onto the car, so you can see which panel is which in the sim. ' + SIM_TIP }],
-      ['Linked edges on car', '2', 'carPart:carLinks', { tick: actions.carOn('carLinks'), needs: 1, tip: 'Paints the linked edges onto the car, so you can check they meet in the sim. ' + SIM_TIP }],
-      ['Centrelines on car', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. ' + SIM_TIP }], 0,
       ['Panel outlines', '', 'show:outlines', { tick: app.show.outlines, needs: 1 }], ['Template lines', '', 'show:lines', { tick: app.show.lines, needs: 1 }], ['Mesh', '', 'show:mesh', { tick: app.show.mesh, needs: 1 }], 0,
-      ['Exclusion zone', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }], ['Exclusion zone league…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
-      ['Exclusion zone on car', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. ' + SIM_TIP }],
-      ...(app.zonesAsk ? [['Submit exclusion zone…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []), 0,
-      ['Kit decals', '', 'show:kitDecals', { tick: app.show.kitDecals, needs: 1, off: !actions.kitSets(), tip: 'Shows the decals the car\'s template has of its own, over your paint. Only a view: never painted' }],
-      ...(actions.kitSets() > 1 ? [['Kit decal set…', '', 'pickKitSet', { needs: 1, tip: 'Pick which of the template\'s decal sets to show: the base decals, or another series\' set the template keeps hidden' }]] : []),
-      ['Kit decals on car', '', 'toggleKitOnCar', { tick: actions.kitOnCar('decals'), needs: 1, off: !actions.kitSets(), tip: `Paints the kit decal set on show onto the car, so you can see it in the sim. ${SIM_TIP}` }],
-      ['Number and sponsor boxes', '', 'show:kitBoxes', { tick: app.show.kitBoxes, needs: 1, off: !actions.hasBoxes(), tip: 'Shows where the template says the number and sponsor decals go' }],
-      ['Number and sponsor boxes on car', '', 'toggleBoxesOnCar', { tick: actions.kitOnCar('boxes'), needs: 1, off: !actions.hasBoxes(), tip: `Paints the number and sponsor boxes onto the car, so you can see them in the sim. ${SIM_TIP}` }], 0,
-      ['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }], 0,
+      ['Exclusion zone', '', '', { sub: [
+        ['Show', '', 'toggleZone', { tick: actions.zoneOn(), needs: 1, tip: 'Shows where a league\'s broadcast decals go, so you can keep your paint clear of them' }],
+        ['League…', '', 'pickZoneLeague', { needs: 1, tip: 'Pick which league\'s exclusion zone to show' }],
+        ...(app.zonesAsk ? [['Submit…', '', 'submitZone', { off: !(app.zone && app.zone.zones), tip: 'Send the exclusion zone on show to the shared library, through GitHub' }]] : []),
+      ] }],
+      ['Kit decals', '', '', { sub: [
+        ['Off', '', 'kitSet:-1', { tick: !app.show.kitDecals, needs: 1, off: !actions.kitSets() }],
+        ...actions.kitSetNames().map((n, i) => [esc(n), '', 'kitSet:' + i, { tick: app.show.kitDecals && actions.kitSetOn() === i, needs: 1, tip: i ? 'Decals the template keeps hidden, for another series. Only a view: never painted' : 'The decals the template shows. Only a view: never painted' }]),
+      ] }],
+      ['Number and sponsor boxes', '', 'show:kitBoxes', { tick: app.show.kitBoxes, needs: 1, off: !actions.hasBoxes(), tip: 'Shows where the template says the number and sponsor decals go' }], 0,
+      ['On car', '', '', { sub: [
+        ['Map', 'C', 'toggleGuide', { tick: actions.guideOn(), needs: 1, tip: 'Paints the panel colours, linked edges and centrelines onto the car. ' + SIM_TIP }],
+        ['Panel colours', '1', 'carPart:carColours', { tick: actions.carOn('carColours'), needs: 1, tip: 'Paints each panel\'s colour and name onto the car, so you can see which panel is which in the sim. ' + SIM_TIP }],
+        ['Linked edges', '2', 'carPart:carLinks', { tick: actions.carOn('carLinks'), needs: 1, tip: 'Paints the linked edges onto the car, so you can check they meet in the sim. ' + SIM_TIP }],
+        ['Centrelines', '3', 'carPart:carCentres', { tick: actions.carOn('carCentres'), needs: 1, tip: 'Paints the centrelines onto the car, so you can check them in the sim. ' + SIM_TIP }], 0,
+        ['Exclusion zone', '', 'toggleZoneOnCar', { tick: actions.zoneOnCar(), needs: 1, tip: 'Paints the exclusion zone onto the car, so you can see it in the sim. ' + SIM_TIP }],
+        ['Kit decals', '', 'toggleKitOnCar', { tick: actions.kitOnCar('decals'), needs: 1, off: !actions.kitSets(), tip: `Paints the kit decals on show onto the car, so you can see them in the sim. ${SIM_TIP}` }],
+        ['Number and sponsor boxes', '', 'toggleBoxesOnCar', { tick: actions.kitOnCar('boxes'), needs: 1, off: !actions.hasBoxes(), tip: `Paints the number and sponsor boxes onto the car, so you can see them in the sim. ${SIM_TIP}` }],
+      ] }], 0,
+      ['Theme', '', '', { sub: [['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }]] }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Tutorial: Getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Tutorial: Painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Tutorial: Maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }],, ['Tutorial: Gradients', '', 'tour:gradients', { tip: 'The car gradient: one fade along the whole car, and which panels sit where' }], ['Tutorial: Library', '', 'tour:library', { tip: 'Your pictures and shapes, and searching for icons' }], ['Tutorial: Drawing shapes', '', 'tour:shapes', { tip: 'Drawing a shape of your own and keeping it in the library' }], 0, ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Tutorials', '', '', { sub: [['Getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }], ['Gradients', '', 'tour:gradients', { tip: 'The car gradient: one fade along the whole car, and which panels sit where' }], ['Library', '', 'tour:library', { tip: 'Your pictures and shapes, and searching for icons' }], ['Drawing shapes', '', 'tour:shapes', { tip: 'Drawing a shape of your own and keeping it in the library' }]] }], 0, ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
     const [label, key, act, o = {}] = it;
+    // a submenu: opens beside its row on hover, or on a tap (focus)
+    if (o.sub) return `<div class="submenu"><button type="button" class="subhead" aria-haspopup="true"><span>${label}</span><kbd>›</kbd></button><div class="drop">${o.sub.map(itemHtml).join('')}</div></div>`;
     const cls = 'tick' in o ? (o.tick ? 'tick' : 'notick') : '';
     const bare = o.needs && !app.doc.template, tip = bare ? NEEDS : o.tip;
     return `<button data-act="${act}" class="${cls}"${o.off || bare ? ' disabled' : ''}${tip ? ` title="${tip}"` : ''}><span>${label}</span><kbd>${key}</kbd></button>`;
@@ -1270,6 +1289,7 @@ export function initUI(app, actions, version) {
     if (act.startsWith('show:')) { const k = act.slice(5); app.show[k] = !app.show[k]; actions.redraw(); actions.saveView(); return; } // a view choice: nothing in the livery changes
     if (act.startsWith('theme:')) return actions.setTheme(act.slice(6));
     if (act.startsWith('carPart:')) return actions.toggleCarPart(act.slice(8));
+    if (act.startsWith('kitSet:')) return actions.showKitSet(+act.slice(7));
     if (act.startsWith('tour:')) return actions.tour(act.slice(5));
     if (act === 'shortcuts') return shortcuts();
     if (act === 'about') return about();
@@ -1337,6 +1357,14 @@ export function initUI(app, actions, version) {
     }
   });
 
+  // a submenu that would run off the right of the window opens to the left instead
+  document.addEventListener('pointerover', (e) => {
+    const sub = e.target.closest('.submenu');
+    if (!sub) return;
+    const d = sub.querySelector(':scope > .drop');
+    sub.classList.remove('flip');
+    if (sub.getBoundingClientRect().right + d.offsetWidth > window.innerWidth - 4) sub.classList.add('flip');
+  });
   // right-click menus: on the sheet, and on a row of the Layers list
   const openCtx = (e, items) => {
     e.preventDefault();

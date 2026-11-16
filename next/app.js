@@ -1054,7 +1054,7 @@ const actions = {
   async newLivery() {
     const had = app.projectId && app.doc.name;
     await setDoc(newDoc(), null);
-    if (had) ui.say(`${had} is kept in File › Open…`);
+    if (had) ui.say(`${had} is kept in File › Open › Saved livery…`);
   },
 
   async open() {
@@ -1626,7 +1626,7 @@ const actions = {
   async toggleZoneOnCar() {
     const old = zoneLayer();
     if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); change({ now: true }); ui.say('Exclusion zone is off the car'); return; }
-    if (!app.zone || !app.zone.zones) { ui.say('Show an exclusion zone first: View > Exclusion zone', true); return; }
+    if (!app.zone || !app.zone.zones) { ui.say('Show an exclusion zone first: View › Exclusion zone › Show', true); return; }
     const src = (await zonePicture(app.zone.zones, SIZE, false)).toDataURL('image/png');
     const l = createImageLayer(await loadImage(src), src, ZONE_LAYER);
     l.scale = 1;
@@ -1640,16 +1640,15 @@ const actions = {
   // ---- the kit's own decals and boxes (from the template PSD, kept with the livery)
   kitSets: () => ((app.doc.kit && app.doc.kit.sets) || []).length,
   hasBoxes: () => !!(app.doc.kit && app.doc.kit.boxes),
-  async pickKitSet() {
-    const sets = (app.doc.kit && app.doc.kit.sets) || [], now = kitSet();
-    const id = await ui.pickList({ title: 'Kit decals: pick a set', empty: 'This template has no decals of its own.',
-      items: sets.map((s, i) => ({ id: String(i), name: s.name, note: s === now ? 'Showing now' : '' })) });
-    if (id === null || id === undefined) return;
-    app.kitSet = +id;
-    app.show.kitDecals = true;
+  kitSetNames: () => ((app.doc.kit && app.doc.kit.sets) || []).map(s => s.name),
+  kitSetOn: () => ((app.doc.kit && app.doc.kit.sets) || []).indexOf(kitSet()),
+  // View › Kit decals › a set (or Off, -1); the car shows the new set too when its decals are on it
+  async showKitSet(i) {
+    app.show.kitDecals = i >= 0;
+    if (i >= 0) app.kitSet = i;
+    saveView(); requestDraw(); ui.refresh();
     const old = carLayer(KIT_LAYER);
-    if (old) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); await actions.toggleKitOnCar(KIT_LAYER, true); } // the car shows the new set too
-    requestDraw(); ui.refresh();
+    if (old && i >= 0) { app.doc.layers.splice(app.doc.layers.indexOf(old), 1); await actions.toggleKitOnCar(KIT_LAYER, true); }
   },
   // the kit decal set on show, or the boxes, painted onto the car as a locked
   // layer on top, as Exclusion zone on car does; quietly: only swapping it for another set
@@ -2455,7 +2454,7 @@ const actions = {
     try {
       const doc = await deserializeDoc(data);
       // the livery on screen is kept already (setDoc saves its last edit first)
-      const kept = app.projectId ? ` · The one before is in File › Open… as ${app.doc.name}` : '';
+      const kept = app.projectId ? ` · The one before is in File › Open › Saved livery… as ${app.doc.name}` : '';
       // always a new project: opening a file never writes over one already here
       await setDoc(doc, freshId());
       await runSave();
