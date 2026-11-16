@@ -81,9 +81,14 @@ function wirePieces(psd, wires) {
 
 // 'sponsor', 'number' or null for a layer name; "leaderboard" and "official"
 // layers are the same number boxes for other series
-const zoneKind = (name) => (/sponsor/i.test(name) ? 'sponsor'
-  : /number/i.test(name) && !/leaderboard|official/i.test(name) ? 'number' : null);
-const DECAL_RE = /(decal|logos?)\b/i;
+// ("Sponser Blocks": two kits' spelling; the Falcon's "Number Color Blocks" are
+// two small marker squares, not number boxes)
+const zoneKind = (name) => (/spons[oe]r/i.test(name) ? 'sponsor'
+  : /number/i.test(name) && !/leaderboard|official|colou?r/i.test(name) ? 'number' : null);
+// "Car_decal", "Color Change Decals", "IMSA LOGOS", and layers that start
+// "Color Change" ("Color Change bits", "colorchange"); not "Tire Rim Color
+// Change", which is a part's colour
+const DECAL_RE = /(decals?|logos?)\b|^colou?r\s*chang/i;
 
 // the sponsor and number boxes: one per separate block on those layers,
 // blocks under 300 px² dropped as crumbs
