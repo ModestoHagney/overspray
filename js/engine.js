@@ -519,8 +519,28 @@ function inkBox(img) {
   return box;
 }
 // → { cx, cy, W, H, list }: the layer's middle and size, and where each copy
-// goes as { x, y } offsets on the sheet; the first is the layer itself
+// goes as { x, y } offsets on the sheet; the first is the layer itself.
+// One redraw asks this several times (drawing, its box, the spec map, the
+// mirrored side, the fade's dots), and the layer is copied on the way, so the
+// answer is kept by what it depends on. Shared: callers only read it.
+const offsetsKept = new Map();
+const imgKeys = new WeakMap();
+let imgKeyCount = 0;
+const imgKey = (img) => { if (!img) return 0; if (!imgKeys.has(img)) imgKeys.set(img, ++imgKeyCount); return imgKeys.get(img); };
 export function repeatOffsets(layer) {
+  const l = layer, r = layer.repeat;
+  const key = JSON.stringify([r, isRegionLayer(l) ? [l.rx, l.ry, l.rw, l.rh, l.turn, l.flipH, l.flipV, l.pts]
+    : [l.x, l.y, l.rotation, l.scale, l.scaleY, l.flipH, l.flipV, imgKey(l.img), l.img && l.img.width, l.img && l.img.height, l.img && l.img.res],
+  r.way === 'scatter' && !r.at ? clipPolys(l) : 0]);
+  let got = offsetsKept.get(key);
+  if (!got) {
+    if (offsetsKept.size >= 200) offsetsKept.clear(); // ponytail: dropped all at once, a busy livery has a few dozen at most
+    got = workOutOffsets(layer);
+    offsetsKept.set(key, got);
+  }
+  return got;
+}
+function workOutOffsets(layer) {
   const r = layer.repeat;
   // the item's own axes on the sheet, and its size along them
   let { ex, ey } = repeatAxes(layer), W, H, cx, cy;
@@ -589,12 +609,27 @@ function scattered(layer, r, cx, cy, W, H, ex, ey) {
   // ponytail: by the item's own box, so a randomly turned or sized copy is only roughly kept clear
   const aw = W + r.space, ah = H + r.space, apart = aw > 0 && ah > 0;
   const clash = (q, x, y) => { const dx = x - q.x, dy = y - q.y; return Math.abs(dx * ex.x + dy * ex.y) < aw && Math.abs(dx * ey.x + dy * ey.y) < ah; };
+  // copies sorted into squares as wide as the furthest a clash can reach, so
+  // a dart is checked only against the copies in the squares round it
+  const cell = Math.max(1, Math.hypot(aw, ah)), grid = new Map();
+  const at = (x, y) => Math.floor(x / cell) + ',' + Math.floor(y / cell);
+  const put = (q) => { const k = at(q.x, q.y); grid.has(k) ? grid.get(k).push(q) : grid.set(k, [q]); };
+  const near = (x, y) => {
+    const i = Math.floor(x / cell), j = Math.floor(y / cell);
+    for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++) {
+      const list = grid.get(a + ',' + b);
+      if (list && list.some(q => clash(q, x, y))) return true;
+    }
+    return false;
+  };
   const pts = [{ x: cx, y: cy }];
+  put(pts[0]);
   for (let tries = 0; pts.length < r.count && tries < r.count * 30; tries++) {
     const x = x0 + rand() * (x1 - x0), y = y0 + rand() * (y1 - y0);
     if (wins.length && !wins.some(w => contains(w, x, y))) continue;
-    if (apart && pts.some(q => clash(q, x, y))) continue; // ponytail: checks every copy, fine to a few hundred
+    if (apart && near(x, y)) continue;
     pts.push({ x, y });
+    put(pts[pts.length - 1]);
   }
   return pts.map(q => ({ x: q.x - cx, y: q.y - cy }));
 }
@@ -634,20 +669,24 @@ export function copyLook(r, k, ns = 1) {
   return { c, s, roll };
 }
 // the layer and its copies, each varied as its settings say
-function drawCopies(ctx, layer) {
+// cull: { x0, y0, x1, y1 } on the sheet, or null; copies that land wholly
+// outside it are not drawn (they would only be trimmed away)
+function drawCopies(ctx, layer, cull = null) {
   const r = layer.repeat;
   if (!r) return drawLayerContent(ctx, layer);
   const { cx, cy, W, H, list } = repeatOffsets(layer);
   const aim = aimOf(r, cx, cy, list), far = Math.max(1, Math.hypot(aim.b.x - aim.a.x, aim.b.y - aim.a.y));
   const ns = isRegionLayer(layer) ? 1 + r.shapes.length : 1;
   const looks = new Map();
-  const look = (c, s) => {
+  const look = (c, s) => { // each look's outline and fill made once, for all the copies that wear it
     const key = c * 8 + s;
-    if (!looks.has(key)) looks.set(key, lookOf(layer, c ? r.colors[c - 1] : null, s ? r.shapes[s - 1] : null, cx, cy, Math.max(W, H)));
+    if (!looks.has(key)) { const v = lookOf(layer, c ? r.colors[c - 1] : null, s ? r.shapes[s - 1] : null, cx, cy, Math.max(W, H)); looks.set(key, [v, regionPaint(ctx, v)]); }
     return looks.get(key);
   };
+  const seen = cull && copySpots(layer);
   const alpha = ctx.globalAlpha, from = layer.carry && layer.carry.from; // carried from one panel: only the copies on it
   list.forEach((o, k) => {
+    if (seen) { const q = seen.spots[k], R = seen.reach; if (q.x + R < cull.x0 || q.y + R < cull.y0 || q.x - R > cull.x1 || q.y - R > cull.y1) return; }
     if (from && !contains(from, cx + o.x, cy + o.y)) return;
     const { c, s, roll } = copyLook(r, k, ns);
     if (layer.only && !layer.only.has(c)) return; // the finish map stamps each colour's copies with that colour's finish
@@ -664,9 +703,44 @@ function drawCopies(ctx, layer) {
     if (turn) ctx.rotate(turn);
     if (size !== 1) ctx.scale(size, size);
     ctx.translate(-cx, -cy);
-    drawLayerContent(ctx, look(c, s));
+    const [v, pre] = look(c, s);
+    drawLayerContent(ctx, v, pre);
     ctx.restore();
   });
+}
+// a shape's fill and outline, or null for anything else
+function regionPaint(ctx, layer) {
+  if (layer.carPaint || !isRegionLayer(layer)) return null;
+  const [rx, ry, rw, rh] = [layer.rx ?? 0, layer.ry ?? 0, layer.rw ?? SIZE, layer.rh ?? SIZE];
+  return { style: fillPaintStyle(ctx, layer, rx, ry, rw, rh), path: fillShapePath(layer.shape, rx, ry, rw, rh, layer.pts) };
+}
+// how far from its middle a copy can leave pixels: the layer (or another of
+// its outlines) at any turn, grown by Random size
+function copyReach(layer, W, H) {
+  const r = layer.repeat;
+  const cs = isRegionLayer(layer) ? null : layerCorners(layer), own = cs ? Math.hypot(cs[0].x - cs[2].x, cs[0].y - cs[2].y) : Math.hypot(layer.rw, layer.rh);
+  // ponytail: another outline is set in a square of the item's longer side; 1.5 of it leaves room for bend handles past its corners
+  const other = r.shapes && r.shapes.length ? Math.max(W, H) * 1.5 : 0;
+  return Math.max(own, Math.hypot(W, H), other) / 2 * (1 + 0.75 * (r.rSize || 0) / 100) + 3;
+}
+// → { spots, reach }: each copy's middle on the sheet (carried across a seam,
+// where it lands), in the order of repeatOffsets' list, and how far it reaches
+function copySpots(layer) {
+  const { cx, cy, W, H, list } = repeatOffsets(layer), k = layer.carry;
+  let reach = copyReach(layer, W, H);
+  if (k) { // the most the carry stretches anything
+    const T = k.a * k.a + k.b * k.b + k.c * k.c + k.d * k.d, D = k.a * k.d - k.b * k.c;
+    reach *= Math.sqrt((T + Math.sqrt(Math.max(0, T * T - 4 * D * D))) / 2);
+  }
+  const spots = list.map(o => { const x = cx + o.x, y = cy + o.y; return k ? { x: k.a * x + k.c * y + k.e, y: k.b * x + k.d * y + k.f } : { x, y }; });
+  return { spots, reach };
+}
+// the box round a list of outlines, or the sheet
+function boxOf(polys) {
+  if (!polys.length) return { x0: 0, y0: 0, x1: SIZE, y1: SIZE };
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const poly of polys) for (const q of poly) { if (q.x < x0) x0 = q.x; if (q.y < y0) y0 = q.y; if (q.x > x1) x1 = q.x; if (q.y > y1) y1 = q.y; }
+  return { x0: Math.max(0, x0), y0: Math.max(0, y0), x1: Math.min(SIZE, x1), y1: Math.min(SIZE, y1) };
 }
 
 // ---------- painting ----------
@@ -685,7 +759,7 @@ specCanvas.getContext('2d', { willReadFrequently: true });
 let fxScratch = null;
 
 // the layer's own pixels, without opacity, trim or shadow
-function drawLayerContent(ctx, layer) {
+function drawLayerContent(ctx, layer, pre = null) {
   if (layer.carPaint) { // a car gradient: on each panel with a car line, the strip's colours along that line (mirror.js withCarLines)
     const stops = carStops(layer.car.blocks);
     for (const { clip, p0, p1 } of layer.carPaint) {
@@ -711,9 +785,9 @@ function drawLayerContent(ctx, layer) {
       ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
       ctx.translate(-(rx + rw / 2), -(ry + rh / 2));
     }
-    ctx.fillStyle = fillPaintStyle(ctx, layer, rx, ry, rw, rh);
-    const outline = fillShapePath(layer.shape, rx, ry, rw, rh, layer.pts);
-    ctx.fill(outline);
+    const { style, path } = pre || regionPaint(ctx, layer);
+    ctx.fillStyle = style;
+    ctx.fill(path);
     ctx.restore();
     return;
   }
@@ -768,7 +842,7 @@ export function drawLayer(ctx, layer, forSpec = false) {
     fxScratch ??= sheet();
     const buf = fxScratch.getContext('2d');
     buf.clearRect(0, 0, SIZE, SIZE);
-    drawCopies(buf, layer);
+    drawCopies(buf, layer); // not culled: a copy just outside the trim can cast its shadow inside
     // drawn from the buffer a whole sheet off to the left, with the shadow
     // pushed a sheet back to the right: only the shadow lands on the sheet
     ctx.save();
@@ -782,7 +856,8 @@ export function drawLayer(ctx, layer, forSpec = false) {
     ctx.restore();
     ctx.drawImage(fxScratch, 0, 0); // and the layer over it
   } else {
-    drawCopies(ctx, layer);
+    // a Repeat's copies are kept to what shows: the strip it is carried onto, or its trim, or the sheet
+    drawCopies(ctx, layer, layer.repeat ? boxOf(k && k.strip ? [k.strip] : windows) : null);
   }
   ctx.restore();
 }
@@ -868,17 +943,15 @@ function paintBox(layer) {
       x0 = Math.max(0, Math.floor(Math.min(...xs)) - 3); y0 = Math.max(0, Math.floor(Math.min(...ys)) - 3);
       x1 = Math.min(SIZE, Math.ceil(Math.max(...xs)) + 3); y1 = Math.min(SIZE, Math.ceil(Math.max(...ys)) + 3);
     } catch { /* no box to be had: the whole sheet */ }
-  } else if (!(fx && fx.shadow > 0) && !k) {
-    // copies: round each copy's middle, as far as the layer (or another of
-    // its outlines, or a copy grown by Random size) can reach at any turn.
-    // A whole-sheet box made every accurate redraw of a Repeat read the whole sheet back twice
+  } else if (!(fx && fx.shadow > 0)) {
+    // copies: round each copy's middle (where it is carried to, across a
+    // seam), as far as it can reach (copyReach). A whole-sheet box made every
+    // accurate redraw of a Repeat read the whole sheet back twice
     try {
-      const { cx, cy, W, H, list } = repeatOffsets(layer), r = layer.repeat;
-      const cs = isRegionLayer(layer) ? null : layerCorners(layer), own = cs ? Math.hypot(cs[0].x - cs[2].x, cs[0].y - cs[2].y) : Math.hypot(layer.rw, layer.rh);
-      const reach = Math.max(own, Math.hypot(W, H)) / 2 * (1 + 0.75 * (r.rSize || 0) / 100) + 3;
+      const { spots, reach } = copySpots(layer);
       let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
-      for (const o of list) { a = Math.min(a, cx + o.x); b = Math.min(b, cy + o.y); c = Math.max(c, cx + o.x); d = Math.max(d, cy + o.y); }
-      if (list.length) { x0 = Math.max(0, Math.floor(a - reach)); y0 = Math.max(0, Math.floor(b - reach)); x1 = Math.min(SIZE, Math.ceil(c + reach)); y1 = Math.min(SIZE, Math.ceil(d + reach)); }
+      for (const q of spots) { a = Math.min(a, q.x); b = Math.min(b, q.y); c = Math.max(c, q.x); d = Math.max(d, q.y); }
+      if (spots.length) { x0 = Math.max(0, Math.floor(a - reach)); y0 = Math.max(0, Math.floor(b - reach)); x1 = Math.min(SIZE, Math.ceil(c + reach)); y1 = Math.min(SIZE, Math.ceil(d + reach)); }
     } catch { /* no box to be had: the whole sheet */ }
   }
   // nothing shows outside its trim, shadow included
@@ -938,7 +1011,33 @@ function paintLayerPaint(ctx, layer) {
   const s = scratch.getContext('2d');
   s.clearRect(0, 0, SIZE, SIZE);
   drawLayer(s, layer, false);
-  mixLinearInto(ctx, scratch, paintBox(layer));
+  for (const area of mixAreas(layer, paintBox(layer))) mixLinearInto(ctx, scratch, area);
+}
+// where in box to mix: copies spread thin (scattered, say) leave most of their
+// box empty, so only the squares some copy reaches are read back. Each pixel
+// is mixed on its own, so mixing a few pieces is the same as mixing the box.
+const TILE = 128;
+function mixAreas(layer, box) {
+  if (!layer.repeat || (layer.fx && layer.fx.shadow > 0) || box.w * box.h < TILE * TILE * 8) return [box];
+  let s;
+  try { s = copySpots(layer); } catch { return [box]; }
+  const nx = Math.ceil(box.w / TILE), ny = Math.ceil(box.h / TILE), hit = new Uint8Array(nx * ny);
+  let n = 0;
+  for (const q of s.spots) {
+    const i0 = Math.max(0, Math.floor((q.x - s.reach - box.x) / TILE)), i1 = Math.min(nx - 1, Math.floor((q.x + s.reach - box.x) / TILE));
+    const j0 = Math.max(0, Math.floor((q.y - s.reach - box.y) / TILE)), j1 = Math.min(ny - 1, Math.floor((q.y + s.reach - box.y) / TILE));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (!hit[j * nx + i]) { hit[j * nx + i] = 1; n++; }
+  }
+  if (n > nx * ny * 0.7) return [box]; // nearly all of it: one read is quicker than many
+  const out = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (!hit[j * nx + i]) continue;
+    let e = i; while (e + 1 < nx && hit[j * nx + e + 1]) e++; // a run along the row, read as one
+    const x = box.x + i * TILE, y = box.y + j * TILE;
+    out.push({ x, y, w: Math.min(box.x + box.w, box.x + (e + 1) * TILE) - x, h: Math.min(TILE, box.y + box.h - y) });
+    i = e;
+  }
+  return out;
 }
 
 // The given layers painted in stack order over a transparent sheet, exactly
