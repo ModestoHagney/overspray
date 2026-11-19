@@ -954,8 +954,9 @@ function paintBox(layer) {
       if (spots.length) { x0 = Math.max(0, Math.floor(a - reach)); y0 = Math.max(0, Math.floor(b - reach)); x1 = Math.min(SIZE, Math.ceil(c + reach)); y1 = Math.min(SIZE, Math.ceil(d + reach)); }
     } catch { /* no box to be had: the whole sheet */ }
   }
-  // nothing shows outside its trim, shadow included
-  const windows = k ? k.clip : clipPolys(layer);
+  // nothing shows outside its trim, shadow included; a carried copy only in its strip of the edge
+  // (its panel's whole box made every strip of a Continues layer read back that panel)
+  const windows = k ? (k.strip ? [k.strip] : k.clip) : clipPolys(layer);
   if (windows.length) {
     const all = windows.flat();
     x0 = Math.max(x0, Math.floor(Math.min(...all.map(q => q.x))) - 1); y0 = Math.max(y0, Math.floor(Math.min(...all.map(q => q.y))) - 1);
@@ -1008,10 +1009,12 @@ function paintLayerInto(ctx, layer) {
 }
 function paintLayerPaint(ctx, layer) {
   if (!linearEdges || !edgesInLinear(layer)) return drawLayer(ctx, layer, false);
-  const s = scratch.getContext('2d');
-  s.clearRect(0, 0, SIZE, SIZE);
+  // only its box is cleared and read: whatever an earlier layer left outside it is never looked at
+  // (clearing the whole sheet for each was most of the time of a Continues layer's many strips)
+  const s = scratch.getContext('2d'), box = paintBox(layer);
+  s.clearRect(box.x, box.y, box.w, box.h);
   drawLayer(s, layer, false);
-  for (const area of mixAreas(layer, paintBox(layer))) mixLinearInto(ctx, scratch, area);
+  for (const area of mixAreas(layer, box)) mixLinearInto(ctx, scratch, area);
 }
 // where in box to mix: copies spread thin (scattered, say) leave most of their
 // box empty, so only the squares some copy reaches are read back. Each pixel
