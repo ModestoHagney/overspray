@@ -612,7 +612,7 @@ function projectThumb() {
   c.width = c.height = 128;
   const g = c.getContext('2d');
   g.imageSmoothingQuality = 'high';
-  g.drawImage(paint(), 0, 0, 128, 128);
+  g.drawImage(!dirty && composite ? composite : paint(), 0, 0, 128, 128); // the picture on screen, when it is up to date: painting it all again for 128 px doubled the work of every save
   return c.toDataURL('image/jpeg', 0.6);
 }
 async function runSave() {
