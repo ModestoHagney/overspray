@@ -102,6 +102,8 @@ function assertExportable(canvas) {
 // paint: a function that hands over the paint already made for this doc
 // (accurate edges) if the caller still has it, else null: making it again is
 // the slow part on a livery of many layers.
+// specDoc: the doc the spec map is made from, when it differs from doc (Live
+// leaves the "on car" layers out of it: they would stamp Gloss over the finishes).
 // One save at a time: a click on Live or Save to iRacing while a live save is
 // still writing would open the same file twice, and one of the two fails.
 let queue = Promise.resolve();
@@ -111,7 +113,7 @@ export function saveToIracing(...args) {
   return run;
 }
 
-async function writeLivery(doc, custid, { quiet = false, paint: made = null } = {}) {
+async function writeLivery(doc, custid, { quiet = false, paint: made = null, specDoc = doc } = {}) {
   custid = String(custid || '').trim();
   if (!validCustid(custid)) return { ok: false, error: 'Enter your iRacing customer number first.' };
   try {
@@ -124,7 +126,7 @@ async function writeLivery(doc, custid, { quiet = false, paint: made = null } = 
     assertExportable(paint);
     await persist.writeFileToFolder(handle, paintName, canvasToTGA(paint));
     if (specName) {
-      const spec = renderSpec(doc);
+      const spec = renderSpec(specDoc);
       assertExportable(spec);
       await persist.writeFileToFolder(handle, specName, canvasToTGA(spec, { alpha: true }));
     }

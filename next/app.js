@@ -703,7 +703,7 @@ async function liveTick(attempt = 0) {
   try {
     // the car gets the accurate picture; if the screen's is that already, it is not made a second time
     if (dirty || !accurate || !composite) { picture(true); requestDraw(); }
-    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate && !sansGuide ? composite : null) }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
+    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate && !sansGuide ? composite : null), specDoc: app.doc.layers.some(carOnly) ? realShown() : undefined }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
   } catch (err) { // a drawing error must not leave Live busy for good, skipping every later edit
     res = { ok: false, error: err && err.message };
   }
