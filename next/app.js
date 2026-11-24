@@ -55,6 +55,7 @@ export const app = {
   custid: '',
   live: false,
   liveBad: false,                     // the last live save failed
+  liveOutside: null,                  // { names, at }: files something else changed while Live was on, which Live put back
   projectId: null,                    // browser project autosave writes through to
   canUndo: false,
   canRedo: false,
@@ -710,6 +711,7 @@ async function liveTick(attempt = 0) {
   liveBusy = false;
   if (liveAgain) { liveAgain = false; liveTick(); return; } // a newer change is waiting: send that
   if (!res.ok && attempt < LIVE_RETRIES) { liveRetry = setTimeout(() => liveTick(attempt + 1), 400); return; }
+  if (res.ok && res.outside && res.outside.length) { app.liveOutside = { names: res.outside, at: new Date() }; ui.refreshChrome(); }
   if (app.liveBad !== !res.ok) {
     app.liveBad = !res.ok;
     if (!res.ok) ui.say(`Live paused${res.error ? ': ' + res.error.replace(/\.$/, '') : ''}. Click Live to reconnect.`, true);
@@ -1185,6 +1187,7 @@ const actions = {
   async toggleLive() {
     if (app.live && !app.liveBad) {
       app.live = false;
+      app.liveOutside = null;
       // the car had the "on car" layers: it gets the livery without them again
       if (app.doc.layers.some(carOnly)) saveToIracing(realShown(), app.custid, { quiet: true }).catch(() => {});
     } else if (await actions.saveIracing()) { // a real save first: it proves the folder and the number

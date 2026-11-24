@@ -299,9 +299,13 @@ export function initUI(app, actions, version) {
     const live = $('btn-live');
     live.setAttribute('aria-pressed', app.live);
     const paused = app.live && app.liveBad;
+    const outside = app.live && !paused && app.liveOutside; // something else changed the car's files: Live put them back
     live.classList.toggle('bad', paused);
+    live.classList.toggle('warn', !!outside);
     live.innerHTML = `<i></i>${paused ? 'Live paused' : 'Live'}`;
-    live.title = paused ? 'Click to reconnect to the iRacing paints folder' : 'Send every change to the car in iRacing';
+    live.title = paused ? 'Click to reconnect to the iRacing paints folder'
+      : outside ? `Another app (Trading Paints, maybe) changed ${outside.names.join(' and ')}. Live put Overspray's back at ${outside.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Send every change to the car in iRacing';
     for (const key of PANELS) panels[key].hidden = !app.show[key];
 
     $('dock').hidden = ![...$('dock').children].some((p) => !p.hidden);

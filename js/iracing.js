@@ -98,7 +98,7 @@ function assertExportable(canvas) {
 
 // Writes the paint (and, for a car, the spec map) into the linked folder.
 // quiet = a live save: never prompts for permission.
-// → { ok, paintName, specName, backed, error }
+// → { ok, paintName, specName, backed, outside (names of files something else had changed: put back), error }
 // paint: a function that hands over the paint already made for this doc
 // (accurate edges) if the caller still has it, else null: making it again is
 // the slow part on a livery of many layers.
@@ -107,6 +107,11 @@ function assertExportable(canvas) {
 // One save at a time: a click on Live or Save to iRacing while a live save is
 // still writing would open the same file twice, and one of the two fails.
 let queue = Promise.resolve();
+// What was last written to each file: { sum, at (its last-changed time) }, by
+// car folder and file name. A live save skips a file it would write the same
+// again, unless something else (Trading Paints, say) has changed it since.
+const written = new Map();
+const sumOf = async (blob) => new Uint8Array(await crypto.subtle.digest('SHA-1', await blob.arrayBuffer())).join();
 export function saveToIracing(...args) {
   const run = queue.then(() => writeLivery(...args));
   queue = run.catch(() => {});
@@ -122,15 +127,26 @@ async function writeLivery(doc, custid, { quiet = false, paint: made = null, spe
     if (!handle) return { ok: false, error: 'No iRacing paints folder linked, its permission was lost, or the car\'s folder is not in it.' };
     const [paintName, specName] = paintFilenames(doc, custid);
     const backed = await backupOriginals(handle, [paintName, specName]);
+    const outside = []; // the files something else changed since the last write
+    const put = async (name, blob) => {
+      const key = (doc.car || '') + '/' + name, was = written.get(key), sum = await sumOf(blob);
+      const now = was && await persist.readFileFromFolder(handle, name); // its date only: nothing is read from it
+      const moved = !!was && (!now || now.lastModified !== was.at);
+      if (moved) outside.push(name);
+      if (quiet && was && !moved && was.sum === sum) return; // Live: the car has it already
+      await persist.writeFileToFolder(handle, name, blob);
+      const after = await persist.readFileFromFolder(handle, name);
+      written.set(key, { sum, at: after ? after.lastModified : 0 });
+    };
     const paint = exportPaintCanvas(doc, (made && made()) || renderPaint(doc, { linearEdges: true }));
     assertExportable(paint);
-    await persist.writeFileToFolder(handle, paintName, canvasToTGA(paint));
+    await put(paintName, canvasToTGA(paint));
     if (specName) {
       const spec = renderSpec(specDoc);
       assertExportable(spec);
-      await persist.writeFileToFolder(handle, specName, canvasToTGA(spec, { alpha: true }));
+      await put(specName, canvasToTGA(spec, { alpha: true }));
     }
-    return { ok: true, paintName, specName, backed };
+    return { ok: true, paintName, specName, backed, outside };
   } catch (err) {
     return { ok: false, error: err.message || 'Could not write to the folder.' };
   }
