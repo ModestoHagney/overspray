@@ -11,8 +11,9 @@ export function encodeTGA(rgba, w, h, { alpha = false } = {}) {
   // map 16 MB, so they are not copied again
   const out = new Uint8Array(18 + w * h * size);
   out.set([2], 2);                            // image type: truecolour, no RLE
-  out.set([w & 255, w >> 8, h & 255, h >> 8, size * 8, alpha ? 0x28 : 0x20], 12); // size, bits, top-left origin (+ 8 alpha bits)
-  for (let i = 0, o = 18; i < rgba.length; i += 4) {
+  // bottom-left origin, the bottom row stored first: the layout Photoshop and GIMP write
+  out.set([w & 255, w >> 8, h & 255, h >> 8, size * 8, alpha ? 0x08 : 0x00], 12); // size, bits, origin (+ 8 alpha bits)
+  for (let y = h - 1, o = 18; y >= 0; y--) for (let i = y * w * 4, end = i + w * 4; i < end; i += 4) {
     out[o++] = rgba[i + 2];                   // stored blue, green, red
     out[o++] = rgba[i + 1];
     out[o++] = rgba[i];

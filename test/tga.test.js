@@ -10,19 +10,19 @@ const header = ({ type = 2, w, h, bpp = 24, descriptor = 0x20, idLen = 0, cmapTy
   Uint8Array.from([idLen, cmapType, type, 0, 0, 0, 0, 0, 0, 0, 0, 0, w & 255, w >> 8, h & 255, h >> 8, bpp, descriptor]);
 const concat = (...parts) => new Uint8Array(parts.flatMap(p => [...p])).buffer;
 
-test('encodeTGA 24-bit: plain header, pixels stored blue-green-red from the top', () => {
+test('encodeTGA 24-bit: plain header, pixels stored blue-green-red from the bottom row', () => {
   const out = encodeTGA(RGBA_2x2, 2, 2);
   assert.ok(out instanceof Uint8Array);
-  assert.deepEqual([...out.slice(0, 18)], [...header({ w: 2, h: 2 })]);
-  assert.deepEqual([...out.slice(18)], [0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255]);
+  assert.deepEqual([...out.slice(0, 18)], [...header({ w: 2, h: 2, descriptor: 0x00 })]);
+  assert.deepEqual([...out.slice(18)], [255, 0, 0, 255, 255, 255, 0, 0, 255, 0, 255, 0]);
 });
 
 test('encodeTGA 32-bit: alpha bits in the header, every alpha 255', () => {
   const see = Uint8ClampedArray.from(RGBA_2x2, (v, i) => i === 3 ? 17 : v); // a see-through pixel
   const out = encodeTGA(see, 2, 2, { alpha: true });
-  assert.deepEqual([...out.slice(0, 18)], [...header({ w: 2, h: 2, bpp: 32, descriptor: 0x28 })]);
+  assert.deepEqual([...out.slice(0, 18)], [...header({ w: 2, h: 2, bpp: 32, descriptor: 0x08 })]);
   assert.equal(out.length, 18 + 16);
-  assert.deepEqual([...out.slice(18, 22)], [0, 0, 255, 255]);
+  assert.deepEqual([...out.slice(26, 30)], [0, 0, 255, 255]); // the see-through red pixel, top row, stored after the bottom row
   assert.ok(out.slice(18).every((v, i) => i % 4 !== 3 || v === 255));
 });
 
