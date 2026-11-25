@@ -55,6 +55,7 @@ export const app = {
   custid: '',
   live: false,
   liveBad: false,                     // the last live save failed
+  liveOutside: null,                  // { names, at }: files something else changed while Live was on, which Live put back
   projectId: null,                    // browser project autosave writes through to
   canUndo: false,
   canRedo: false,
@@ -703,13 +704,14 @@ async function liveTick(attempt = 0) {
   try {
     // the car gets the accurate picture; if the screen's is that already, it is not made a second time
     if (dirty || !accurate || !composite) { picture(true); requestDraw(); }
-    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate && !sansGuide ? composite : null) }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
+    res = await saveToIracing(shown(), app.custid, { quiet: true, paint: () => (!dirty && accurate && !sansGuide ? composite : null), specDoc: app.doc.layers.some(carOnly) ? realShown() : undefined }); // asked for when it is needed: the sheet may have been redrawn while the folder was being reached
   } catch (err) { // a drawing error must not leave Live busy for good, skipping every later edit
     res = { ok: false, error: err && err.message };
   }
   liveBusy = false;
   if (liveAgain) { liveAgain = false; liveTick(); return; } // a newer change is waiting: send that
   if (!res.ok && attempt < LIVE_RETRIES) { liveRetry = setTimeout(() => liveTick(attempt + 1), 400); return; }
+  if (res.ok && res.outside && res.outside.length) { app.liveOutside = { names: res.outside, at: new Date() }; ui.refreshChrome(); }
   if (app.liveBad !== !res.ok) {
     app.liveBad = !res.ok;
     if (!res.ok) ui.say(`Live paused${res.error ? ': ' + res.error.replace(/\.$/, '') : ''}. Click Live to reconnect.`, true);
@@ -1185,6 +1187,7 @@ const actions = {
   async toggleLive() {
     if (app.live && !app.liveBad) {
       app.live = false;
+      app.liveOutside = null;
       // the car had the "on car" layers: it gets the livery without them again
       if (app.doc.layers.some(carOnly)) saveToIracing(realShown(), app.custid, { quiet: true }).catch(() => {});
     } else if (await actions.saveIracing()) { // a real save first: it proves the folder and the number
