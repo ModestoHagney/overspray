@@ -144,7 +144,7 @@ async function writeLivery(doc, custid, { quiet = false, paint: made = null, spe
     if (specName) {
       const spec = renderSpec(specDoc);
       assertExportable(spec);
-      await put(specName, canvasToTGA(spec, { alpha: true }));
+      await put(specName, canvasToTGA(spec));
     }
     return { ok: true, paintName, specName, backed, outside };
   } catch (err) {
