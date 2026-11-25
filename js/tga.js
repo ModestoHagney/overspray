@@ -1,7 +1,7 @@
 // TGA files for iRacing, written and read without a canvas so the tests can
-// run them under node. A paint is written as 24-bit; a spec map as 32-bit with
-// every alpha byte 255, because iRacing scales the spec map's effect by alpha
-// and a missing or random alpha would weaken it.
+// run them under node. A paint and a spec map are both written as 24-bit:
+// iRacing asks for 24-bit spec maps, 32-bit only for one with an alpha mask
+// (alpha scales the finish), and Overspray makes no mask.
 
 // Top-left-origin RGBA bytes → an uncompressed truecolour TGA (type 2), with
 // alpha (32-bit) or without (24-bit).
