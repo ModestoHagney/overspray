@@ -17,7 +17,7 @@ import { MATERIALS, resolveParams } from './engine.js';
 // that the sliders then move. Sparkle is separate and sits on top of any of
 // them: the engine's 'flake' (single-pixel specks) or 'glitter' (chips)
 // texture, built round those same three numbers.
-export const FINISHES = ['gloss', 'satin', 'matte', 'metallic', 'pearl', 'chrome'];
+export const FINISHES = ['gloss', 'satin', 'matte', 'flat', 'metallic', 'pearl', 'candy', 'chrome', 'velvet'];
 export const finishName = (key) => (MATERIALS[key] || MATERIALS.gloss).label;
 // bright: how much each fleck also lightens the paint under it (0 = a fleck is finish only, and reads dark unless it catches the light)
 export const SPARKLE = { amount: 18, size: 1, strength: 100, bright: 50 }; // what ticking Sparkle starts with
