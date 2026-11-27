@@ -593,7 +593,7 @@ export function initUI(app, actions, version) {
     const others = finishList(d).filter((o) => !(o.kind === t.kind && (o.kind === 'colour' ? o.colour === t.colour : o.id === t.id)));
     const same = !others.length ? '' : field('Same as', `<select id="fn-same" title="Take the finish another colour or layer has, exactly">${opt('', 'Choose…', true)}${others.map((o) =>
       opt(`${o.kind}:${o.kind === 'colour' ? o.colour : o.id}`, `${o.kind === 'colour' ? o.colour.toUpperCase() : o.name} · ${finishLabel(o.material, o.params)}`, false)).join('')}</select>`);
-    return '<canvas id="f-tile" class="ftile" width="472" height="176" aria-hidden="true"></canvas>' +
+    return '<canvas id="f-tile" class="ftile" width="472" height="300" aria-hidden="true"></canvas>' +
       `<div class="ftarget">${label}<b id="f-label"></b></div>` + scope +
       `<div class="finishes">${FINISHES.map((k) => `<button data-finish="${k}" aria-pressed="${k === preset}" title="${FINISH_TIPS[k]}">${finishName(k)}</button>`).join('')}</div>` +
       same +
