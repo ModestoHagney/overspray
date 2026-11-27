@@ -3107,20 +3107,31 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveV
 
 // ---------- start ----------
 
+// A browser's storage can stop answering (seen once in beta; clearing site data
+// fixed it). Each read at start gets this long, then the app opens without it;
+// once one has hung, the rest are not waited for.
+// ponytail: 10 s is a guess; a huge livery on a slow disk is the case to watch
+const STUCK = 'Could not load your saved work. Reload the page to try again';
+let stuck = false;
+function within(p, ms = 10e3) {
+  if (stuck) { p.catch(() => {}); return Promise.reject(new Error('stuck')); }
+  return Promise.race([p, new Promise((_, no) => setTimeout(() => { stuck = true; no(new Error('timeout')); }, ms))]);
+}
+
 async function boot() {
   try { applyStoredTheme(localStorage.getItem('next-theme')); } catch { /* default theme */ }
   app.doc = newDoc();
-  app.custid = (await persist.loadSetting('custid').catch(() => '')) || '';
-  const mapsKey = await persist.loadSetting('mapsKey').catch(() => null);
+  app.custid = (await within(persist.loadSetting('custid')).catch(() => '')) || '';
+  const mapsKey = await within(persist.loadSetting('mapsKey')).catch(() => null);
   if (mapsKey) app.admin = { key: mapsKey, login: '' }; // checked by GitHub on its first use
-  app.live = !!(await persist.loadSetting('liveSync').catch(() => false)) && persist.fsSupported();
+  app.live = !!(await within(persist.loadSetting('liveSync')).catch(() => false)) && persist.fsSupported();
   if (app.live) {
     // After a reload the browser wants a click before it lets the page write
     // to the folder again. Say so on the button, instead of looking live and
     // sending nothing.
     let granted = false;
     try {
-      const h = await persist.getPaintsFolder();
+      const h = await within(persist.getPaintsFolder());
       granted = !!h && (await h.queryPermission({ mode: 'readwrite' })) === 'granted';
     } catch { /* treated as not granted */ }
     app.liveBad = !granted;
@@ -3129,10 +3140,10 @@ async function boot() {
   try {
     let id = null;
     try { id = sessionStorage.getItem(TAB_KEY); } catch { /* blocked: the last one saved */ }
-    id = id || (await persist.loadSetting('next-project').catch(() => null)) || null;
-    let data = id && await claim(id) ? await persist.loadProject(id) : null;
+    id = id || (await within(persist.loadSetting('next-project')).catch(() => null)) || null;
+    let data = id && await claim(id) ? await within(persist.loadProject(id)) : null;
     busy = !!id && heldId !== id;
-    if (!data && !id) data = await persist.loadBlob('next-autosave'); // ponytail: from before every livery was a project; it becomes one on its next save
+    if (!data && !id) data = await within(persist.loadBlob('next-autosave')); // ponytail: from before every livery was a project; it becomes one on its next save
     else app.projectId = data ? id : null;
     if (data) {
       const json = typeof data === 'string' ? data : JSON.stringify(data);
@@ -3146,7 +3157,7 @@ async function boot() {
   // started with, while the saved one was still loading: draw it again
   dirty = true;
   try {
-    const lib = await persist.loadBlob('next-library');
+    const lib = await within(persist.loadBlob('next-library'));
     if (lib) library = readLibrary(lib);
   } catch { /* an empty library */ }
   const saved = loadView();
@@ -3154,8 +3165,9 @@ async function boot() {
   takeBools(app.mapShow, saved.mapShow);
   Object.assign(guideParts, { colours: app.mapShow.carColours, links: app.mapShow.carLinks, centres: app.mapShow.carCentres });
   ui = initUI(app, actions, VERSION);
-  if (busy) ui.say('Your last livery is open in another tab, so this tab starts a new one', true);
-  else if ((await backupState.now())?.paused) ui.say('Backup folder paused: File › Car setup… › Allow starts it again', true);
+  if (stuck) ui.say(STUCK, true);
+  else if (busy) ui.say('Your last livery is open in another tab, so this tab starts a new one', true);
+  else if ((await within(backupState.now()).catch(() => null))?.paused) ui.say('Backup folder paused: File › Car setup… › Allow starts it again', true);
   ui.setLayout(saved.panels);
   tools = initTools(app, {
     screenToDoc, docToScreen, change, requestDraw,
