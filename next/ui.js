@@ -121,7 +121,7 @@ const MAP_TOOLS = [
   ['mplace', 'Place a piece: where a loose part (a wing, say) sits on the car'],
 ];
 const PANELS = ['layers', 'props'];
-const FINISH_TIPS = { gloss: 'Shiny clear coat, like new paint', satin: 'A soft sheen, between Gloss and Matte', matte: 'Flat, no shine', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', chrome: 'A mirror: it reflects everything' };
+const FINISH_TIPS = { gloss: 'Shiny, like new paint', satin: 'A soft sheen, between Gloss and Matte', matte: 'Dull, with a little shine', flat: 'No shine at all', metallic: 'Shiny, with a metal glint', pearl: 'Metallic with a softer glow', candy: 'Deep and glossy, half metal', chrome: 'A mirror: it reflects everything', velvet: 'Metal with a soft, dusty sheen' };
 const WEIGHT_NAMES = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi bold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
 // A slider as one bar that fills up: its name inside on the left, its value
 // on the right. Dragged anywhere along it (Shift: slowly), or clicked to type.
