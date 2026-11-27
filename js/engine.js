@@ -6,19 +6,20 @@ import { SHAPES, placed, flatten, contains } from './shapes.js';
 export const SIZE = 2048; // iRacing paints are 2048 px square
 
 // Finishes as iRacing's spec map stores them: red says how metallic, green how
-// rough, blue how much clearcoat (iRacing's own docs: keep blue at 255 unless
-// less clearcoat is meant). These are where each finish starts; a layer's
+// rough, blue the clearcoat. Blue starts at 0 in every finish: a high blue
+// made every finish look flat in the sim (2026-11), and other spec map tools
+// keep it at 0 too (Gabir Motors' presets). These are where each finish starts; a layer's
 // matParams can change any of its numbers. A finish with tex has a sparkle
 // pattern in it (see sparklePattern), with knobs of its own.
 export const MATERIALS = {
-  gloss:    { label: 'Gloss',    met: 0,   rough: 40,  clear: 255 },
-  matte:    { label: 'Matte',    met: 0,   rough: 230, clear: 60  },
-  satin:    { label: 'Satin',    met: 0,   rough: 120, clear: 150 },
-  metallic: { label: 'Metallic', met: 180, rough: 70,  clear: 255 },
-  chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 255 },
-  pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 255 },
-  flake:    { label: 'Flake',    met: 160, rough: 45,  clear: 255, tex: 'flake', density: 18, contrast: 100 },
-  glitter:  { label: 'Glitter',  met: 170, rough: 60,  clear: 255, tex: 'glitter', density: 30, scale: 4, contrast: 100 },
+  gloss:    { label: 'Gloss',    met: 0,   rough: 40,  clear: 0 },
+  matte:    { label: 'Matte',    met: 0,   rough: 230, clear: 0 },
+  satin:    { label: 'Satin',    met: 0,   rough: 120, clear: 0 },
+  metallic: { label: 'Metallic', met: 180, rough: 70,  clear: 0 },
+  chrome:   { label: 'Chrome',   met: 255, rough: 10,  clear: 0 },
+  pearl:    { label: 'Pearl',    met: 190, rough: 60,  clear: 0 },
+  flake:    { label: 'Flake',    met: 160, rough: 45,  clear: 0, tex: 'flake', density: 18, contrast: 100 },
+  glitter:  { label: 'Glitter',  met: 170, rough: 60,  clear: 0, tex: 'glitter', density: 30, scale: 4, contrast: 100 },
 };
 const SPARKLE_KNOBS = ['density', 'scale', 'contrast'];
 

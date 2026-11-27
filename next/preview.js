@@ -63,7 +63,7 @@ export function renderTile(canvas, material, params, colour) {
       [[L1, 0.7, 1.0], [L2, 0.18, 0.35]].forEach(([light, kDiff, kSpec], n) => {
         const ndl = Math.max(0, nx * light[0] + ny * light[1] + nz * light[2]);
         const ndh = Math.max(0, nx * H[n][0] + ny * H[n][1] + nz * H[n][2]);
-        const specAmt = Math.pow(ndh, shininess) * (0.25 + clearcoat * 0.9 + metallic * 0.35) * kSpec;
+        const specAmt = Math.pow(ndh, shininess) * (0.25 + (1 - clearcoat) * 0.9 + metallic * 0.35) * kSpec;
         const diff = (0.22 + ndl * kDiff) * (1 - metallic * 0.55);
         r += alb[0] * diff + specCol[0] * specAmt;
         g += alb[1] * diff + specCol[1] * specAmt;
