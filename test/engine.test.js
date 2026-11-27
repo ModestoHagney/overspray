@@ -140,10 +140,10 @@ test('loading leaves out kinds of layer it does not know, and keeps the livery s
 });
 
 test('a finish starts from its own numbers, and a layer\'s changes go over them', () => {
-  assert.deepEqual(defaultParams('matte'), { met: 0, rough: 230, clear: 60 });
-  assert.deepEqual(defaultParams('glitter'), { met: 170, rough: 60, clear: 255, density: 30, scale: 4, contrast: 100 });
+  assert.deepEqual(defaultParams('matte'), { met: 0, rough: 230, clear: 0 });
+  assert.deepEqual(defaultParams('glitter'), { met: 170, rough: 60, clear: 0, density: 30, scale: 4, contrast: 100 });
   assert.deepEqual(defaultParams('no such finish'), defaultParams('gloss'));
-  assert.deepEqual(resolveParams('chrome', { rough: 50 }), { met: 255, rough: 50, clear: 255 });
+  assert.deepEqual(resolveParams('chrome', { rough: 50 }), { met: 255, rough: 50, clear: 0 });
   assert.deepEqual(resolveParams('flake', null), defaultParams('flake'));
   assert.notEqual(defaultParams('gloss'), defaultParams('gloss')); // a new object each time
   assert.deepEqual(Object.keys(MATERIALS), ['gloss', 'matte', 'satin', 'metallic', 'chrome', 'pearl', 'flake', 'glitter']);

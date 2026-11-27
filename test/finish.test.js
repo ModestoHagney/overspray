@@ -106,22 +106,22 @@ test('rules and own-finish marks survive save and load; junk rules are dropped',
 });
 
 test('a finish reads as three numbers and optional sparkle, and writes back to what the engine stamps', () => {
-  assert.deepEqual(readFinish('matte', null), { met: 0, rough: 230, clear: 60, sparkle: null });
+  assert.deepEqual(readFinish('matte', null), { met: 0, rough: 230, clear: 0, sparkle: null });
   assert.equal(presetOf(readFinish('matte', null)), 'matte');
   // untouched preset: its name, no params
   assert.deepEqual(writeFinish(readFinish('matte', null)), { material: 'matte', params: null });
   // a slider moved: still called by the finish it came from, with its own numbers
   assert.deepEqual(writeFinish({ met: 0, rough: 200, clear: 60, sparkle: null }, 'matte'), { material: 'matte', params: { met: 0, rough: 200, clear: 60 } });
   // moved onto another preset's numbers, it is that preset
-  assert.deepEqual(writeFinish({ met: 0, rough: 120, clear: 150, sparkle: null }, 'matte'), { material: 'satin', params: null });
+  assert.deepEqual(writeFinish({ met: 0, rough: 120, clear: 0, sparkle: null }, 'matte'), { material: 'satin', params: null });
 });
 
 test('sparkle sits on top of any finish: specks at size 1, chips above', () => {
   const matte = readFinish('matte', null);
   const fine = writeFinish({ ...matte, sparkle: { ...SPARKLE } });
-  assert.deepEqual(fine, { material: 'flake', params: { met: 0, rough: 230, clear: 60, density: 18, contrast: 100, bright: 50 } });
+  assert.deepEqual(fine, { material: 'flake', params: { met: 0, rough: 230, clear: 0, density: 18, contrast: 100, bright: 50 } });
   const coarse = writeFinish({ ...matte, sparkle: { amount: 30, size: 5, strength: 60 } });
-  assert.deepEqual(coarse, { material: 'glitter', params: { met: 0, rough: 230, clear: 60, density: 30, scale: 5, contrast: 60, bright: 0 } });
+  assert.deepEqual(coarse, { material: 'glitter', params: { met: 0, rough: 230, clear: 0, density: 30, scale: 5, contrast: 60, bright: 0 } });
   // and reads back as the same finish with the same sparkle
   assert.deepEqual(readFinish(coarse.material, coarse.params), { ...matte, sparkle: { amount: 30, size: 5, strength: 60, bright: 0 } });
   assert.deepEqual(readFinish(fine.material, fine.params).sparkle, { amount: 18, size: 1, strength: 100, bright: 50 });
