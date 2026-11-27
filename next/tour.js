@@ -3,7 +3,8 @@
 // tutorial, or Help), never by itself.
 // A step: { at: () => element or null (null: the bubble sits in the middle),
 // text, done: () => true once the person has done what the step asks (it then
-// moves on by itself; Next stays off till then unless free), skip: () => true when there is nothing to do }
+// moves on by itself; Next stays off till then unless free), skip: () => true when there is nothing to do,
+// need: { open: () => true while its window is open, at, text: how to open it again }, shown instead while it is closed }
 
 const $ = (id) => document.getElementById(id);
 const seen = (el) => el && el.getClientRects().length > 0;
@@ -90,59 +91,78 @@ const TUTORIALS = {
     ];
   },
   gradients: (app) => {
-    const win = () => shown(q('.cgwin'));
+    const win = () => shown(q('.cgwin')), open = () => !!win();
+    const again = { open, at: () => shown(q('[data-act="openCarGradient"]'), q('[data-panel="layers"]')), text: '<b>The car gradient window</b> was closed. Select the car gradient layer, then <b>Edit gradient…</b> in Properties opens it again.' };
     const lineCount = () => ((app.doc.regionMap && app.doc.regionMap.carLines) || []).length;
     let lines = 0;
     return [
       { at: () => (seen($('btn-empty-template')) ? $('btn-empty-template') : q('#menus button')),
         text: '<b>Open blank template…</b> (File › Template) A car gradient is laid out on the car\'s panels, so open its template first.',
         done: () => !!app.doc.template, skip: () => !!app.doc.template },
-      { at: tool('cargrad'), start: toPaint, text: '<b>Car gradient.</b> One fade along the whole car, the same on both sides. Click it: it adds a car gradient layer and opens its window.', done: () => !!win() },
-      { at: () => q('.cgwin .cg-strip'), text: '<b>The strip</b> stands for the car, front to back. Each panel takes the colours of its own stretch of it.' },
-      { at: () => q('.cgwin .cg-blocks'), text: '<b>Its colours.</b> Drag one to move it, drag its ends to make it longer or shorter, and click it to change the colour. A gap between two colours fades; colours that touch meet at a sharp edge.' },
-      { at: () => q('.cgwin [data-cg="add"]'), text: '<b>Add a colour.</b> One more, in the widest gap.' },
-      { at: () => q('.cgwin [data-cg="pick"]'), text: '<b>Set panels.</b> Says where each panel sits along the car. Click it.', done: () => !!q('.cgwin [data-cg="pick"][aria-pressed="true"]') },
-      { at: () => q('.cgwin [data-cg="pick"]'), start: () => { lines = lineCount(); }, // beside the window, so the sheet stays in view
+      { at: tool('cargrad'), start: toPaint, text: '<b>Car gradient.</b> One fade along the whole car, the same on both sides. Click it: it adds a car gradient layer and opens its window.', done: open },
+      { need: again, at: () => q('.cgwin .cg-strip'), text: '<b>The strip</b> stands for the car, front to back. Each panel takes the colours of its own stretch of it.' },
+      { need: again, at: () => q('.cgwin .cg-blocks'), text: '<b>Its colours.</b> Drag one to move it, drag its ends to make it longer or shorter, and click it to change the colour. A gap between two colours fades; colours that touch meet at a sharp edge.' },
+      { need: again, at: () => q('.cgwin [data-cg="add"]'), text: '<b>Add a colour.</b> One more, in the widest gap.' },
+      { need: again, at: () => q('.cgwin [data-cg="pick"]'), text: '<b>Set panels.</b> Says where each panel sits along the car. Click it.', done: () => !!q('.cgwin [data-cg="pick"][aria-pressed="true"]') },
+      { need: again, at: () => q('.cgwin [data-cg="pick"]'), start: () => { lines = lineCount(); }, // beside the window, so the sheet stays in view
         text: 'Click panels on the sheet (Shift+click adds one, or drag a box round them). Then drag an arrow across them, from the front of the car to the back.', done: () => lineCount() > lines },
-      { at: () => q('.cgwin .cg-lines'), text: '<b>A bar</b> for the panels you picked, in their colour on the sheet. Drag it to where they sit under the strip, and drag its ends to stretch it. Hover a bar to see its panels.' },
+      { need: again, at: () => q('.cgwin .cg-lines'), text: '<b>A bar</b> for the panels you picked, in their colour on the sheet. Drag it to where they sit under the strip, and drag its ends to stretch it. Hover a bar to see its panels.' },
       { at: () => null, text: '<b>That is the car gradient.</b> The panel lines are saved with the car\'s map, so every car gradient on this car uses them. <b>Edit gradient…</b> in Properties opens the window again.' },
     ];
   },
   library: (app) => {
     const open = () => !!q('dialog.lib[open]');
     const tab = (k) => () => !!q(`[data-libtab="${k}"][aria-pressed="true"]`);
+    const again = { open, at: tool('image'), text: '<b>Library.</b> The library was closed. Open it again to carry on.' };
     return [
       { at: tool('image'), start: toPaint, text: '<b>Library.</b> Click it to open the library.', done: open },
-      { at: () => q('[data-libtab="logos"]'), text: '<b>Your pictures.</b> Logos and pictures you bring in are kept here for every livery. <b>Picture from a file…</b> brings one in.' },
-      { at: () => q('[data-libtab="shapes"]'), text: '<b>Your shapes.</b> Click it.', done: tab('shapes') },
-      { at: () => q('.tiles') || q('#dlg-body .note'), text: 'Shapes you draw, find or bring in are kept here. Click one to put it on the sheet. A shape takes a colour, and works with Stamp and Repeat too.' },
-      { at: () => q('[data-lib="draw:"]'), text: '<b>Draw a shape</b> opens a blank page to draw your own. The Drawing shapes tutorial shows how.' },
-      { at: () => q('[data-lib="shapefile:"]'), text: '<b>Shape from an SVG file…</b> makes a shape from what an SVG file fills.' },
-      { at: () => q('[data-libtab="search"]'), text: '<b>Search icons.</b> Click it.', done: tab('search') },
-      { at: () => q('#lib-q'), text: 'Type a word, like flame or wing, and press Enter. Click a find to put it on the sheet as a shape. It is kept in Your shapes too.' },
+      { need: again, at: () => q('[data-libtab="logos"]'), text: '<b>Your pictures.</b> Logos and pictures you bring in are kept here for every livery. <b>Picture from a file…</b> brings one in.' },
+      { need: again, at: () => q('[data-libtab="shapes"]'), text: '<b>Your shapes.</b> Click it.', done: tab('shapes') },
+      { need: again, at: () => q('.tiles') || q('#dlg-body .note'), text: 'Shapes you draw, find or bring in are kept here. Click one to put it on the sheet. A shape takes a colour, and works with Stamp and Repeat too.' },
+      { need: again, at: () => q('[data-lib="draw:"]'), text: '<b>Draw a shape</b> opens a blank page to draw your own. The Drawing shapes tutorial shows how.' },
+      { need: again, at: () => q('[data-lib="shapefile:"]'), text: '<b>Shape from an SVG file…</b> makes a shape from what an SVG file fills.' },
+      { need: again, at: () => q('[data-libtab="search"]'), text: '<b>Search icons.</b> Click it.', done: tab('search') },
+      { need: again, at: () => q('#lib-q'), text: 'Type a word, like flame or wing, and press Enter. Click a find to put it on the sheet as a shape. It is kept in Your shapes too.' },
       { at: () => null, text: '<b>That is the library.</b> Edit › Save to library keeps several selected layers as one, in Your shapes.' },
     ];
   },
-  shapes: (app) => [
-    { at: tool('image'), start: toPaint, text: '<b>Library.</b> Open it, click <b>Your shapes</b>, then <b>Draw a shape</b>.', done: () => !!app.workshop },
-    { at: () => $('shapebox'), text: '<b>Draw a shape.</b> A blank page. Everything drawn here becomes one shape for your library.' },
-    { at: tool('pen'), start: pick('pen', app), text: '<b>Pen (P).</b> Click points round your shape, then press Enter. Backspace takes back a point, and Shift holds 45°.' },
-    { at: withOpts('shape'), start: pick('shape', app), text: '<b>Shape (U).</b> Ready-made shapes work here too. Draw them over each other to build one shape out of several.' },
-    { at: () => $('sb-wrap'), start: pick('select', app), text: '<b>Wrap.</b> Select shapes first. One shape is pulled tight round them, like a rubber band: two circles become a slot.' },
-    { at: () => $('sb-split'), text: '<b>Split.</b> Makes each piece a shape of its own again.' },
-    { at: () => $('sb-fillIn'), text: '<b>Fill in.</b> Makes it solid: its holes are filled.' },
-    { at: () => q('[data-act="saveDrawnShape"]'), text: '<b>Save to library</b> (Ctrl+S). Joins everything into one shape, names it and keeps it in Your shapes. <b>Cancel</b> throws the drawing away.' },
-    { at: () => null, text: '<b>That is drawing shapes.</b> A saved shape takes a colour, and works with Shape, Stamp and Repeat like any other.' },
-  ],
+  shapes: (app) => {
+    const drawing = () => !!app.workshop;
+    const again = { open: drawing, at: tool('image'), text: '<b>Draw a shape</b> was closed. Open the library, click <b>Your shapes</b>, then <b>Draw a shape</b> to carry on.' };
+    return [
+      { at: tool('image'), start: toPaint, text: '<b>Library.</b> Open it, click <b>Your shapes</b>, then <b>Draw a shape</b>.', done: drawing },
+      { need: again, at: () => $('shapebox'), text: '<b>Draw a shape.</b> A blank page. Everything drawn here becomes one shape for your library.' },
+      { need: again, at: tool('pen'), start: pick('pen', app), text: '<b>Pen (P).</b> Click points round your shape, then press Enter. Backspace takes back a point, and Shift holds 45°.' },
+      { need: again, at: withOpts('shape'), start: pick('shape', app), text: '<b>Shape (U).</b> Ready-made shapes work here too. Draw them over each other to build one shape out of several.' },
+      { need: again, at: () => $('sb-wrap'), start: pick('select', app), text: '<b>Wrap.</b> Select shapes first. One shape is pulled tight round them, like a rubber band: two circles become a slot.' },
+      { need: again, at: () => $('sb-split'), text: '<b>Split.</b> Makes each piece a shape of its own again.' },
+      { need: again, at: () => $('sb-fillIn'), text: '<b>Fill in.</b> Makes it solid: its holes are filled.' },
+      { at: () => q('[data-act="saveDrawnShape"]'), text: '<b>Save to library</b> (Ctrl+S). Joins everything into one shape, names it and keeps it in Your shapes. <b>Cancel</b> throws the drawing away.' },
+      { at: () => null, text: '<b>That is drawing shapes.</b> A saved shape takes a colour, and works with Shape, Stamp and Repeat like any other.' },
+    ];
+  },
 };
 // in order: the end of one offers the next
 export const TUTORIAL_NAMES = { setup: 'Getting set up', painting: 'Painting', maps: 'Maps', gradients: 'Gradients', library: 'Library', shapes: 'Drawing shapes' };
 
 let stop = null;
 
-export function startTour(app, name = 'setup') {
+// Layers and Properties shown and unfolded for the tutorial (its steps point
+// into them), then put back as they were
+const openBoxes = (app, save) => {
+  const was = ['layers', 'props'].map((k) => { const p = q(`[data-panel="${k}"]`), b = p.querySelector('.body'); return [k, p, b, app.show[k], b.hidden]; });
+  for (const [k, p, b] of was) { app.show[k] = true; p.hidden = b.hidden = false; }
+  $('dock').hidden = false;
+  return () => {
+    for (const [k, p, b, show, folded] of was) { app.show[k] = show; p.hidden = !show; b.hidden = folded; }
+    $('dock').hidden = !was.some(([k]) => app.show[k]);
+    if (save) save(); // a save while it ran kept them open
+  };
+};
+
+export function startTour(app, name = 'setup', save) {
   if (stop) stop();
-  const steps = TUTORIALS[name](app);
+  const steps = TUTORIALS[name](app), shut = openBoxes(app, save);
   const dim = document.createElement('div'), spot = document.createElement('div'), bubble = document.createElement('div');
   dim.className = 'tour-dim';
   spot.className = 'tour-spot';
@@ -150,18 +170,23 @@ export function startTour(app, name = 'setup') {
   bubble.setAttribute('role', 'dialog');
   bubble.setAttribute('aria-label', 'Tutorial');
   document.body.append(dim, spot, bubble);
-  let k = -1, at = null, armed = false;
+  let k = -1, at = null, armed = false, away = false; // away: the step's window was closed
   const passed = new Set(); // steps already got past once: coming back to one, Next is on
 
   const go = (n) => {
     if (n > k && k >= 0) passed.add(k);
     while (n < steps.length - 1 && n > k && steps[n].skip && steps[n].skip()) n++; // nothing to do there: on to the next
     k = Math.max(0, Math.min(steps.length - 1, n));
-    const s = steps[k], last = k === steps.length - 1, names = Object.keys(TUTORIAL_NAMES), more = names[names.indexOf(name) + 1];
+    const s = steps[k];
     if (s.start) s.start();
     armed = !!s.done && !s.done(); // already done (coming Back to it): it waits for Next
-    const wait = armed && !s.free && !passed.has(k); // Next stays off until it is done
-    bubble.innerHTML = `<p>${s.text}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
+    away = !!s.need && !s.need.open();
+    draw();
+  };
+  const draw = () => {
+    const s = steps[k], last = k === steps.length - 1, names = Object.keys(TUTORIAL_NAMES), more = names[names.indexOf(name) + 1];
+    const wait = away || (armed && !s.free && !passed.has(k)); // Next stays off until it is done
+    bubble.innerHTML = `<p>${away ? s.need.text : s.text}</p><footer><span>${k + 1} / ${steps.length}</span>${last ? '' : '<button class="btn" data-t="skip">Skip</button>'}` +
       `<button class="btn" data-t="back"${k ? '' : ' disabled'}>Back</button><button class="btn tour" data-t="next"${wait ? ' disabled title="Do this step first. Skip ends the tutorial."' : ''}>${last ? 'Done' : 'Next'}</button></footer>` +
       (last && more ? `<footer><button class="btn tour" data-t="more">Next tutorial: ${TUTORIAL_NAMES[more]}</button></footer>` : '');
     at = null;
@@ -171,7 +196,7 @@ export function startTour(app, name = 'setup') {
   const place = () => {
     const host = q('dialog[open]') || document.body; // over an open dialog (the library), the tour goes inside it
     if (bubble.parentNode !== host) host.append(dim, spot, bubble);
-    const el = steps[k].at();
+    const el = (away ? steps[k].need : steps[k]).at();
     at = seen(el) ? el : null;
     const r = at ? at.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 2 };
     const pad = at ? 4 : 0;
@@ -191,6 +216,8 @@ export function startTour(app, name = 'setup') {
   // ponytail: polls 5 times a second for the step's element and whether it is done; events per step if this ever costs
   const tick = setInterval(() => {
     const s = steps[k];
+    const lost = !!s.need && !s.need.open();
+    if (lost !== away) { away = lost; return draw(); } // its window closed, or open again: the bubble says so
     if (armed && s.done()) return go(k + 1);
     place();
   }, 200);
@@ -199,12 +226,12 @@ export function startTour(app, name = 'setup') {
     if (!t) return;
     if (t.dataset.t === 'next') return k === steps.length - 1 ? stop() : go(k + 1);
     if (t.dataset.t === 'back') return go(k - 1);
-    if (t.dataset.t === 'more') { const names = Object.keys(TUTORIAL_NAMES); return startTour(app, names[names.indexOf(name) + 1]); }
+    if (t.dataset.t === 'more') { const names = Object.keys(TUTORIAL_NAMES); return startTour(app, names[names.indexOf(name) + 1], save); }
     stop();
   };
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { e.stopPropagation(); stop(); } };
   bubble.addEventListener('click', onClick);
   addEventListener('keydown', onKey, true);
-  stop = () => { clearInterval(tick); removeEventListener('keydown', onKey, true); dim.remove(); spot.remove(); bubble.remove(); stop = null; };
+  stop = () => { clearInterval(tick); removeEventListener('keydown', onKey, true); dim.remove(); spot.remove(); bubble.remove(); shut(); stop = null; };
   go(0);
 }

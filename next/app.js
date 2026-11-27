@@ -1091,7 +1091,7 @@ const actions = {
   },
 
   pickTemplate: () => $('file-template').click(),
-  tour: (name) => startTour(app, name),
+  tour: (name) => startTour(app, name, saveView), // saveView: the boxes it opened are put back and kept so
   // where the cars' template files are: Trading Paints lists them all, free, no login
   getTemplate() { const tab = window.open('https://www.tradingpaints.com/cartemplates', '_blank'); if (tab) tab.opener = null; else ui.say('Allow pop-ups for this site, or open tradingpaints.com/cartemplates', true); },
   async loadTemplateFile(file) {
