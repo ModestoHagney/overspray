@@ -1299,7 +1299,7 @@ export function initUI(app, actions, version) {
     if (act.startsWith('tour:')) return actions.tour(act.slice(5));
     if (act === 'shortcuts') return shortcuts();
     if (act === 'about') return about();
-    if (act === 'whatsnew') { const tab = window.open('https://github.com/ModestoHagney/overspray/releases', '_blank'); if (tab) tab.opener = null; else say('Allow pop-ups for this site, or open github.com/ModestoHagney/overspray/releases', true); return; }
+    if (act === 'whatsnew') { const tab = window.open('https://github.com/ModestoHagney/overspray/blob/main/CHANGELOG.md', '_blank'); if (tab) tab.opener = null; else say('Allow pop-ups for this site, or open github.com/ModestoHagney/overspray/blob/main/CHANGELOG.md', true); return; }
     return actions[act]();
   };
   document.addEventListener('click', (e) => {
