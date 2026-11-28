@@ -178,7 +178,7 @@ export function initUI(app, actions, version) {
     ...(app.zonesAsk ? [['Make exclusion zone', '', 'makeZone', { off: !hasLayer(), tip: 'Everything this layer covers becomes the exclusion zone for this car' }]] : []),
     ...shapeItems(), 0,
     ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }],
-    ['Flip', '', '', { sub: [['Left/right', '', 'flipH', { off: !hasLayer() }], ['Top/bottom', '', 'flipV', { off: !hasLayer() }]] }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
+    ['Flip', '', '', { sub: [['Left/Right', '', 'flipH', { off: !hasLayer() }], ['Top/Bottom', '', 'flipV', { off: !hasLayer() }]] }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
   ];
   const menuDefs = () => ({
@@ -446,7 +446,7 @@ export function initUI(app, actions, version) {
     const box = (k, v) => `<label class="field"><span>${k.toUpperCase()}</span><input id="f-pos-${k}" class="num" type="number" step="1" value="${v}"></label>`;
     return !at ? '' : `<div class="two" title="Where its top-left corner is on the sheet, in pixels. Type a number to move it there.">${box('x', at.x)}${box('y', at.y)}</div>`;
   };
-  const flipBtns = () => '<div class="sub">Flip</div><div class="acts"><button class="btn" data-act="flipH" title="Turn it over, left to right">Left/right</button><button class="btn" data-act="flipV" title="Turn it over, top to bottom">Top/bottom</button></div>';
+  const flipBtns = () => '<div class="sub">Flip</div><div class="acts"><button class="btn" data-act="flipH" title="Turn it over, left to right">Left/Right</button><button class="btn" data-act="flipV" title="Turn it over, top to bottom">Top/Bottom</button></div>';
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');

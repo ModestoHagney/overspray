@@ -317,7 +317,7 @@ export function renameRegion(map, region, name) {
 }
 
 // what each mirrorKind looks like, for the panel settings
-export const MIRROR_NAMES = { flip: 'Left/right', flipV: 'Top/bottom', rot180: 'Turned 180°', same: 'Same way' };
+export const MIRROR_NAMES = { flip: 'Left/Right', flipV: 'Top/Bottom', rot180: 'Turned 180°', same: 'Same way' };
 
 // Set how a pair lies on the sheet by hand, when the guess got it wrong. The
 // twins of links on either panel are moved to match (each link made first
