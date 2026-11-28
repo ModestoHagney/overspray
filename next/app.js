@@ -1794,6 +1794,9 @@ const actions = {
     ui.refresh();
   },
 
+  // Flip: the selection turns over, left to right or top to bottom
+  flipH() { if (canChange() && tools.flip(true)) change({ now: true }); },
+  flipV() { if (canChange() && tools.flip(false)) change({ now: true }); },
   // ---- painting from the map ----
   // Mirrored: the layer is painted on its twin panel (or across its
   // centreline) as well, and both sides follow every edit

@@ -177,7 +177,8 @@ export function initUI(app, actions, version) {
     ['Export PNG', '', 'exportLayerPng', { off: !hasLayer() }],
     ...(app.zonesAsk ? [['Make exclusion zone', '', 'makeZone', { off: !hasLayer(), tip: 'Everything this layer covers becomes the exclusion zone for this car' }]] : []),
     ...shapeItems(), 0,
-    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
+    ['Mirrored', 'Ctrl+M', 'mirror', { off: !hasLayer(), needs: 1, tick: !!(actions.selected() || {}).mirrored }],
+    ['Flip', '', '', { sub: [['Left/right', '', 'flipH', { off: !hasLayer() }], ['Top/bottom', '', 'flipV', { off: !hasLayer() }]] }], ['Trim', '', 'trim', { off: !hasLayer(), needs: 1 }], 0,
     ['Delete', 'Del', 'remove', { off: !hasLayer() }],
   ];
   const menuDefs = () => ({
@@ -445,6 +446,7 @@ export function initUI(app, actions, version) {
     const box = (k, v) => `<label class="field"><span>${k.toUpperCase()}</span><input id="f-pos-${k}" class="num" type="number" step="1" value="${v}"></label>`;
     return !at ? '' : `<div class="two" title="Where its top-left corner is on the sheet, in pixels. Type a number to move it there.">${box('x', at.x)}${box('y', at.y)}</div>`;
   };
+  const flipBtns = () => '<div class="sub">Flip</div><div class="acts"><button class="btn" data-act="flipH" title="Turn it over, left to right">Left/right</button><button class="btn" data-act="flipV" title="Turn it over, top to bottom">Top/bottom</button></div>';
   const mirroredBtn = (on) => `<button class="btn" data-act="mirror" aria-pressed="${!!on}" title="Paint it on the twin panel too, or across the centreline (Ctrl+M)">Mirrored</button>`;
   function propsHtml() {
     if (app.sel === 'base') return colourHead('<span class="pname">Base coat</span>');
@@ -465,7 +467,7 @@ export function initUI(app, actions, version) {
       return colourHead(`<span class="pname">${many.length} layers</span>`) +
         fold('f-place', 'Place', posBoxes() + (turn === null ? '' : slider('f-turn', -180, 180, turn, 'Turn', 'They turn as one, about their middle. A group keeps its angle; a loose selection starts at 0 each time.')) +
           `<label class="switch" title="Where they hang over an edge linked in the Map tab, they carry on onto the panel that edge meets. A piece placed over their panel in the Map tab shows them too">Continue across edges<input id="f-continues" type="checkbox"${many.some((x) => x.continues) ? ' checked' : ''}></label>` +
-          `<div class="acts">${trimButtons(l0)}${mirroredBtn(many.some((x) => x.mirrored))}${trimClear(many.find((x) => trimCount(x)) || l0)}</div>`) +
+          `<div class="acts">${trimButtons(l0)}${mirroredBtn(many.some((x) => x.mirrored))}${trimClear(many.find((x) => trimCount(x)) || l0)}</div>` + flipBtns()) +
         fold('f-look', 'Look', (fills.length ? fadeHtml(fills.find((x) => x.fillType === 'linear' || x.fillType === 'radial') || fills[0]) : '') +
           slider('f-opacity', 0, 100, (l0.opacity ?? 1) * 100, 'Opacity') +
           field('Blend', `<select id="f-blend" title="Multiply darkens what is under it, for a texture such as worn cardboard">${opt('', 'Normal', !l0.blend)}${opt('multiply', 'Multiply', l0.blend === 'multiply')}</select>`)) +
@@ -508,7 +510,7 @@ export function initUI(app, actions, version) {
         l.type === 'fill' ? slider('f-turn', -180, 180, ((l.turn || 0) % 360 + 540) % 360 - 180, 'Turn') : '') +
       (isPic ? `<label class="switch" title="Off: it reads the right way round on both sides. On: a true mirror image.">Reverse the other side<input id="f-mirrorFlip" type="checkbox"${l.mirrorFlip ? ' checked' : ''}${l.mirrored ? '' : ' disabled'}></label>` : '') +
       `<label class="switch" title="Where it hangs over an edge linked in the Map tab, it carries on onto the panel that edge meets. A piece placed over its panel in the Map tab shows it too">Continue across edges<input id="f-continues" type="checkbox"${l.continues ? ' checked' : ''}></label>` +
-      `<div class="acts">${trimButtons(l)}${mirroredBtn(l.mirrored)}<button class="btn" data-act="separate" title="Make the mirrored side a layer of its own"${l.mirrored ? '' : ' disabled'}>Separate</button>${trimClear(l)}</div>`;
+      `<div class="acts">${trimButtons(l)}${mirroredBtn(l.mirrored)}<button class="btn" data-act="separate" title="Make the mirrored side a layer of its own"${l.mirrored ? '' : ' disabled'}>Separate</button>${trimClear(l)}</div>` + flipBtns();
     // a shape's fill can fade to a second colour, or to nothing
     const look = (l.type !== 'fill' ? '' : fadeHtml(l)) +
       (!isText ? '' :

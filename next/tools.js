@@ -57,6 +57,15 @@ export function setShape(layer, pts) {
   layer.rx = b.x; layer.ry = b.y; layer.rw = b.w; layer.rh = b.h;
 }
 
+// A ready-made box is drawn from its box, which cannot turn or flip: from here
+// on it is an outline like any other shape (a flip it carried goes into the outline)
+function toOutline(l) {
+  const cx = l.rx + l.rw / 2, cy = l.ry + l.rh / 2, fh = !!l.flipH, fv = !!l.flipV;
+  const pts = mapped(boxOutline(l.shape, l.rx, l.ry, l.rw, l.rh), q => ({ x: fh ? 2 * cx - q.x : q.x, y: fv ? 2 * cy - q.y : q.y }));
+  l.shape = 'path'; l.flipH = l.flipV = false;
+  setShape(l, pts);
+}
+
 export function moveLayer(l, dx, dy) {
   if (isShape(l)) l.pts = moved(l.pts, dx, dy);
   if (l.fadeFrom && l.fadeTo) { // a fade's two points belong to the shape
@@ -163,14 +172,7 @@ export function initTools(app, env) {
       const l = d.l;
       if (isPic(l)) { const q = f({ x: d.x0, y: d.y0 }); l.x = q.x; l.y = q.y; l.rotation = d.r0 + deg; continue; } // text and pictures turn about their own middle, which goes round with the rest
       if (!d.pts0) {
-        // A ready-made box is drawn from its box, which cannot turn: from here
-        // on it is an outline like any other shape (a flip it carried goes into the outline).
-        if (isBox(l)) {
-          const cx = l.rx + l.rw / 2, cy = l.ry + l.rh / 2, fh = !!l.flipH, fv = !!l.flipV;
-          const pts = mapped(boxOutline(l.shape, l.rx, l.ry, l.rw, l.rh), q => ({ x: fh ? 2 * cx - q.x : q.x, y: fv ? 2 * cy - q.y : q.y }));
-          l.shape = 'path'; l.flipH = l.flipV = false;
-          setShape(l, pts);
-        }
+        if (isBox(l)) toOutline(l);
         d.pts0 = structuredClone(l.pts);
       }
       reshape(l, d, f);
@@ -866,10 +868,36 @@ export function initTools(app, env) {
     const b = manyBox(ls);
     spinBy(spinFrom(ls, { x: 0, y: 0 }, b), deg * Math.PI / 180 - b.t);
   }
+  // Flip: the selection turns over, left to right (h) or top to bottom,
+  // about the middle of the box round it all, so several flip as one
+  function flip(h) {
+    const ls = env.selectedLayers().filter(l => !l.locked && !l.car && (l.type === 'fill' || isPic(l)));
+    if (!ls.length) return 0;
+    const b = bounds(ls.flatMap(outlineOf)), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const f = (q) => (h ? { x: 2 * cx - q.x, y: q.y } : { x: q.x, y: 2 * cy - q.y });
+    for (const l of ls) {
+      if (isPic(l)) { // about its own middle, which goes over with the rest
+        Object.assign(l, f(l)); l.rotation = -(l.rotation || 0);
+        if (h) l.flipH = !l.flipH; else l.flipV = !l.flipV;
+        continue;
+      }
+      if (l.fadeFrom && l.fadeTo) { l.fadeFrom = f(l.fadeFrom); l.fadeTo = f(l.fadeTo); }
+      else if (l.fillType === 'linear') l.gradAngle = h ? 180 - (l.gradAngle || 0) : -(l.gradAngle || 0);
+      // a box and a circle look the same flipped; anything else becomes an outline that can be
+      if (isBox(l) && (l.shape === 'triangle' || l.flipH || l.flipV)) toOutline(l);
+      if (isShape(l)) { setShape(l, mapped(l.pts, f)); l.turn = -(l.turn || 0); continue; }
+      const q = f({ x: l.rx + l.rw / 2, y: l.ry + l.rh / 2 });
+      l.rx = q.x - l.rw / 2; l.ry = q.y - l.rh / 2;
+    }
+    const g = groupOfMany(ls);
+    if (g && g.turn) g.turn = -g.turn;
+    manyTurn.key = ''; // the box round several comes back at its new angle
+    return ls.length;
+  }
   function turnTo(l, deg) {
     spinBy(spinFrom([l], { x: 0, y: 0 }, shapeBox(l)), (deg - (l.turn || 0)) * Math.PI / 180);
     l.turn = deg; // exact, so two shapes typed to the same angle match
   }
 
-  return { down, move, up, key, context, cancel, hint, drawOverlay, turnTo, turnManyTo, manyTurnNow, drawing: () => !!(draft && draft.length) };
+  return { down, move, up, key, context, cancel, hint, drawOverlay, turnTo, turnManyTo, manyTurnNow, flip, drawing: () => !!(draft && draft.length) };
 }
