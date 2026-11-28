@@ -3290,9 +3290,9 @@ if ('serviceWorker' in navigator) {
       if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) take(w); });
     });
     // the browser only looks for a new version when a page opens; look again
-    // every half hour and on coming back to the tab, so the button turns up
+    // every 5 minutes and on coming back to the tab, so the button turns up
     const look = () => reg.update().catch(() => {});
-    setInterval(look, 30 * 60e3);
+    setInterval(look, 5 * 60e3);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) look(); });
   }).catch(() => { /* no worker (plain http on a LAN address): the page still works */ });
 }
