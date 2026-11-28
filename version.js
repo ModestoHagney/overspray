@@ -5,5 +5,5 @@
 // fixes only, middle number for new features (last goes back to 0), first
 // number when Overspray is out of beta.
 // Help › About shows the version, and the build too on the test copy (_lab).
-self.VERSION = 'v0.2.0';
-self.BUILD = 278;
+self.VERSION = 'v0.3.0';
+self.BUILD = 279;
