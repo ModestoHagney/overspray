@@ -13,6 +13,22 @@
 <script defer src="https://umami.niftyfi.sh/script.js" data-website-id="3568df4a-d354-4e6f-9775-ac08c34abd76"></script>
 </head>
 <body>
+<div class="splash" id="splash" role="status"><div class="card">
+  <span class="brandname">Overspray</span>
+  <svg class="spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h.01"/><path d="M7 5h.01"/><path d="M3 7h.01"/><path d="M11 7h.01"/><path d="M7 9h.01"/><path d="M3 11h.01"/><g><rect width="4" height="4" x="15" y="5"/><path d="m19 9 2 2v10c0 .6-.4 1-1 1h-6c-.6 0-1-.4-1-1V11l2-2"/><path d="m13 14 8-2"/><path d="m13 19 8-2"/></g></svg>
+  <p id="splash-msg">Loading…</p>
+  <button class="btn main" id="splash-reload" onclick="location.reload()" hidden>Reload</button>
+</div></div>
+<script>
+// the app's code removes the splash when it has started; if it never does, say so
+setTimeout(() => {
+  const s = document.getElementById('splash');
+  if (!s || s.classList.contains('bad')) return;
+  s.classList.add('bad');
+  document.getElementById('splash-msg').textContent = 'Overspray did not finish loading. Reload the page to try again';
+  document.getElementById('splash-reload').hidden = false;
+}, 30e3);
+</script>
 <div class="app">
   <header class="bar">
     <span class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h.01"/><path d="M7 5h.01"/><path d="M11 7h.01"/><path d="M3 7h.01"/><path d="M7 9h.01"/><path d="M3 11h.01"/><rect width="4" height="4" x="15" y="5"/><path d="m19 9 2 2v10c0 .6-.4 1-1 1h-6c-.6 0-1-.4-1-1V11l2-2"/><path d="m13 14 8-2"/><path d="m13 19 8-2"/></svg>Overspray<span class="beta">beta</span></span>
