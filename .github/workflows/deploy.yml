@@ -22,3 +22,27 @@ jobs:
           git -c safe.directory="$DIR" -C "$DIR" pull --ff-only
           # the runner is root in its container; give the files back to the folder's owner
           chown -R --reference="$DIR" "$DIR"
+
+  # A live push makes the GitHub release for the version in version.js (Help > What's new opens it).
+  # The notes are the "## Change notes" part of the "Version: vX.Y.Z" PR. Already released: skipped.
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: deploy
+    runs-on: [self-hosted, simpson]
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const file = await github.rest.repos.getContent({ owner, repo, path: 'version.js', ref: context.sha });
+            const tag = Buffer.from(file.data.content, 'base64').toString().match(/VERSION = '([^']+)'/)[1];
+            try { await github.rest.repos.getReleaseByTag({ owner, repo, tag }); return core.info(`${tag} is already released`); } catch (e) { if (e.status !== 404) throw e; }
+            const prs = await github.rest.pulls.list({ owner, repo, state: 'closed', sort: 'updated', direction: 'desc', per_page: 100 });
+            const pr = prs.data.find((p) => p.merged_at && p.title.startsWith(`Version: ${tag}`));
+            const notes = pr && (pr.body || '').split('## Change notes')[1];
+            const body = notes ? notes.replace(/^[^\n]*\n/, '').split('\n🤖')[0].trim() : '';
+            await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: tag, target_commitish: context.sha, body, generate_release_notes: !body });
+            core.info(`Released ${tag}${body ? '' : ' (no change notes found, GitHub listed the PRs instead)'}`);
