@@ -1,4 +1,4 @@
-# Change Log
+# Changelog
 
 ## v0.3.0 (28 Nov 2026)
 
