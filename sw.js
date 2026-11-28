@@ -15,7 +15,7 @@ const CACHE = 'overspray-' + self.VERSION + '.' + self.BUILD + ' ' + SCOPE;
 // offline straight away. Every path here must exist in the repo, or the
 // install fails. Everything else is kept the first time it is fetched.
 const START_FILES = [
-  './', './index.html', './version.js', './manifest.webmanifest', './icon.svg',
+  './', './index.html', './version.js', './manifest.webmanifest', './icon.svg', './fonts/rubik-spray-paint-latin.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
 ];
 

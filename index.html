@@ -6,7 +6,11 @@
 <title>Overspray (beta)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Rubik+Spray+Paint&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- the wordmark font is kept here, not on Google Fonts, and fetched first, so the
+     splash never shows "Overspray" in the fallback font and then swaps -->
+<link rel="preload" href="fonts/rubik-spray-paint-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>@font-face { font-family: "Rubik Spray Paint"; src: url(fonts/rubik-spray-paint-latin.woff2) format("woff2"); font-display: block; }</style>
 <link rel="stylesheet" href="next/app.css">
 <link rel="icon" href="icon.svg">
 <link rel="manifest" href="manifest.webmanifest">
