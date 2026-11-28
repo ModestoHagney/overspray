@@ -103,6 +103,23 @@ body.workshop .docname { display: none; }
 #view.draw { cursor: crosshair; }
 #view.pan { cursor: grab; }
 #view.panning { cursor: grabbing; }
+/* splash: a card over the blurred app while it starts; the app's code removes it */
+.splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding-inline: 16px; backdrop-filter: blur(6px); background: var(--shade); }
+.splash .card { display: grid; justify-items: center; gap: 18px; min-width: min(340px, 100%); padding: 32px 44px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px var(--shade); }
+.splash .brandname { font-size: 44px; }
+.splash p { margin: 0; color: var(--muted); font-size: 16px; text-align: center; }
+.splash .btn { font-size: 15px; padding: 8px 20px; }
+/* the logo's spray can, shaking and puffing its dots in paint colours */
+.splash .spin { width: 56px; height: 56px; fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.splash .spin > path { stroke-width: 2.6; animation: puff 1.2s infinite; }
+.splash .spin > path:nth-child(4n+1) { stroke: var(--accent); } .splash .spin > path:nth-child(4n+2) { stroke: var(--live); animation-delay: .1s; }
+.splash .spin > path:nth-child(4n+3) { stroke: var(--warn); animation-delay: .2s; } .splash .spin > path:nth-child(4n+4) { stroke: var(--bad); animation-delay: .3s; }
+.splash .spin > path:nth-child(5) { animation-delay: .4s; } .splash .spin > path:nth-child(6) { animation-delay: .5s; }
+.splash .spin g { animation: shake 1.2s infinite; transform-origin: 18px 14px; }
+@keyframes puff { 0%, 100% { opacity: 0; } 30%, 60% { opacity: 1; } }
+@keyframes shake { 0%, 100%, 30% { transform: rotate(0); } 10% { transform: rotate(-6deg); } 20% { transform: rotate(4deg); } }
+.splash.bad .spin { display: none; }
+.splash.bad p { color: var(--bad); }
 .empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; pointer-events: none; }
 .empty p { margin: 0; color: var(--muted); font-size: 14px; }
 .empty .btn, .empty a { pointer-events: auto; }
