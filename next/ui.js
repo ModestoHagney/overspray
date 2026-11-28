@@ -240,7 +240,7 @@ export function initUI(app, actions, version) {
       ['Theme', '', '', { sub: [['Light', '', 'theme:light', { tick: app.theme === 'light' }], ['Dark', '', 'theme:dark', { tick: app.theme === 'dark' }], ['Match system', '', 'theme:system', { tick: app.theme === 'system' }]] }], 0,
       ['Fit to screen', 'F', 'fit'],
     ],
-    Help: [['Tutorials', '', '', { sub: [['Getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }], ['Gradients', '', 'tour:gradients', { tip: 'The car gradient: one fade along the whole car, and which panels sit where' }], ['Library', '', 'tour:library', { tip: 'Your pictures and shapes, and searching for icons' }], ['Drawing shapes', '', 'tour:shapes', { tip: 'Drawing a shape of your own and keeping it in the library' }]] }], 0, ['Keyboard shortcuts…', 'F1', 'shortcuts'], ['About…', '', 'about']],
+    Help: [['Tutorials', '', '', { sub: [['Getting set up', '', 'tour', { tip: 'The screen dims and walks you through the tabs, a template, Live and your first painted panel' }], ['Painting', '', 'tour:painting', { tip: 'The tools on the left, picking a colour, and the spec map' }], ['Maps', '', 'tour:maps', { tip: 'Finding a map for your car, or making one: pairs, centrelines and links' }], ['Gradients', '', 'tour:gradients', { tip: 'The car gradient: one fade along the whole car, and which panels sit where' }], ['Library', '', 'tour:library', { tip: 'Your pictures and shapes, and searching for icons' }], ['Drawing shapes', '', 'tour:shapes', { tip: 'Drawing a shape of your own and keeping it in the library' }]] }], 0, ['Keyboard shortcuts…', 'F1', 'shortcuts'], ["What's new", '', 'whatsnew', { tip: 'What changed in each version, on GitHub' }], ['About…', '', 'about']],
   });
   const itemHtml = (it) => {
     if (!it) return '<hr>';
@@ -1299,6 +1299,7 @@ export function initUI(app, actions, version) {
     if (act.startsWith('tour:')) return actions.tour(act.slice(5));
     if (act === 'shortcuts') return shortcuts();
     if (act === 'about') return about();
+    if (act === 'whatsnew') { const tab = window.open('https://github.com/ModestoHagney/overspray/releases', '_blank'); if (tab) tab.opener = null; else say('Allow pop-ups for this site, or open github.com/ModestoHagney/overspray/releases', true); return; }
     return actions[act]();
   };
   document.addEventListener('click', (e) => {
