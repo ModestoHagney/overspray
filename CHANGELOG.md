@@ -1,6 +1,4 @@
-# Change notes
-
-What changed in each version of Overspray that went live. Newest at the top.
+# Change Log
 
 ## v0.3.0 (28 Nov 2026)
 
